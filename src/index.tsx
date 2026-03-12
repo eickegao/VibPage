@@ -68,13 +68,13 @@ function showWelcome(provider: string, model: string) {
     console.log(gradientLine(line));
   }
   console.log("");
-  console.log(chalk.dim("  AI-powered content creation\n"));
-  console.log(chalk.dim("  Tips:"));
-  console.log(chalk.dim("  1. Ask me to write articles, blog posts, or any content."));
-  console.log(chalk.dim("  2. I can search the web and fetch pages for research."));
-  console.log(chalk.dim("  3. I can take screenshots of web pages."));
-  console.log(chalk.dim('  4. Type "exit" to quit.\n'));
-  console.log(chalk.dim(`  Using: ${provider}/${model}\n`));
+  console.log(chalk.rgb(151, 220, 226)("  AI-powered content creation\n"));
+  console.log(chalk.white("  Tips:"));
+  console.log(chalk.white("  1. Ask me to write articles, blog posts, or any content."));
+  console.log(chalk.white("  2. I can search the web and fetch pages for research."));
+  console.log(chalk.white("  3. I can take screenshots of web pages."));
+  console.log(chalk.white('  4. Type "exit" to quit.\n'));
+  console.log(chalk.rgb(105, 203, 212)(`  Using: ${provider}/${model}\n`));
 }
 
 program
