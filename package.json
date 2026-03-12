@@ -1,0 +1,34 @@
+{
+  "name": "vibpage",
+  "version": "0.1.0",
+  "description": "AI-powered content creation CLI",
+  "type": "module",
+  "bin": {
+    "vibpage": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "start": "node dist/index.js"
+  },
+  "keywords": [
+    "ai",
+    "markdown",
+    "cli",
+    "content"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@mariozechner/pi-agent-core": "^0.57.1",
+    "@mariozechner/pi-ai": "^0.57.1",
+    "chalk": "^5.6.2",
+    "commander": "^14.0.3",
+    "playwright": "^1.58.2",
+    "turndown": "^7.2.2"
+  },
+  "devDependencies": {
+    "@types/node": "^25.4.0",
+    "@types/turndown": "^5.0.6",
+    "typescript": "^5.9.3"
+  }
+}
