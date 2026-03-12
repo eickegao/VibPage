@@ -8,23 +8,43 @@ import { loadConfig } from "./config.js";
 import { createAgent } from "./agent.js";
 import { App } from "./ui.js";
 
-// Blue-green gradient colors (left to right)
-const G = [
-  "#0066FF", "#0077EE", "#0088DD", "#0099CC",
-  "#00AABB", "#00BBAA", "#00CC99", "#00DD88",
+// 5 gradient anchor colors (teal to light cyan)
+const COLORS: [number, number, number][] = [
+  [38, 170, 185],
+  [65, 186, 199],
+  [105, 203, 212],
+  [151, 220, 226],
+  [201, 237, 240],
 ];
 
-function gradientLine(line: string, colors: string[]): string {
+function lerp(a: number, b: number, t: number): number {
+  return Math.round(a + (b - a) * t);
+}
+
+function interpolateColor(t: number): [number, number, number] {
+  // t is 0..1, map to 4 segments between 5 anchor colors
+  const seg = t * (COLORS.length - 1);
+  const i = Math.min(Math.floor(seg), COLORS.length - 2);
+  const f = seg - i;
+  return [
+    lerp(COLORS[i][0], COLORS[i + 1][0], f),
+    lerp(COLORS[i][1], COLORS[i + 1][1], f),
+    lerp(COLORS[i][2], COLORS[i + 1][2], f),
+  ];
+}
+
+function gradientLine(line: string): string {
+  // Find first and last non-space character positions for even distribution
+  const totalLen = line.length;
   let result = "";
-  let ci = 0;
-  for (let i = 0; i < line.length; i++) {
+  for (let i = 0; i < totalLen; i++) {
     const ch = line[i];
     if (ch === " ") {
       result += ch;
     } else {
-      const color = colors[Math.min(ci, colors.length - 1)];
-      result += chalk.hex(color).bold(ch);
-      ci++;
+      const t = totalLen > 1 ? i / (totalLen - 1) : 0;
+      const [r, g, b] = interpolateColor(t);
+      result += chalk.rgb(r, g, b).bold(ch);
     }
   }
   return result;
@@ -45,7 +65,7 @@ function showWelcome(provider: string, model: string) {
 
   console.log("");
   for (const line of BANNER_LINES) {
-    console.log(gradientLine(line, G));
+    console.log(gradientLine(line));
   }
   console.log("");
   console.log(chalk.dim("  AI-powered content creation\n"));
