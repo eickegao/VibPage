@@ -8,17 +8,46 @@ import { loadConfig } from "./config.js";
 import { createAgent } from "./agent.js";
 import { App } from "./ui.js";
 
-const BANNER = `
-${chalk.cyan.bold("  ╦  ╦╦╔╗ ╔═╗╔═╗╔═╗╔═╗")}
-${chalk.cyan.bold("  ╚╗╔╝║╠╩╗╠═╝╠═╣║ ╦║╣ ")}
-${chalk.cyan.bold("   ╚╝ ╩╚═╝╩  ╩ ╩╚═╝╚═╝")}
-`;
+// Blue-green gradient colors (left to right)
+const G = [
+  "#0066FF", "#0077EE", "#0088DD", "#0099CC",
+  "#00AABB", "#00BBAA", "#00CC99", "#00DD88",
+];
+
+function gradientLine(line: string, colors: string[]): string {
+  let result = "";
+  let ci = 0;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === " ") {
+      result += ch;
+    } else {
+      const color = colors[Math.min(ci, colors.length - 1)];
+      result += chalk.hex(color).bold(ch);
+      ci++;
+    }
+  }
+  return result;
+}
+
+// Large ASCII art using block characters
+const BANNER_LINES = [
+  " ██╗   ██╗ ██╗ ██████╗  ██████╗   █████╗   ██████╗  ███████╗",
+  " ██║   ██║ ██║ ██╔══██╗ ██╔══██╗ ██╔══██╗ ██╔════╝  ██╔════╝",
+  " ██║   ██║ ██║ ██████╔╝ ██████╔╝ ███████║ ██║  ███╗ █████╗  ",
+  " ╚██╗ ██╔╝ ██║ ██╔══██╗ ██╔═══╝  ██╔══██║ ██║   ██║ ██╔══╝  ",
+  "  ╚████╔╝  ██║ ██████╔╝ ██║      ██║  ██║ ╚██████╔╝ ███████╗",
+  "   ╚═══╝   ╚═╝ ╚═════╝  ╚═╝      ╚═╝  ╚═╝  ╚═════╝  ╚══════╝",
+];
 
 function showWelcome(provider: string, model: string) {
-  // Clear screen
   process.stdout.write("\x1B[2J\x1B[H");
 
-  console.log(BANNER);
+  console.log("");
+  for (const line of BANNER_LINES) {
+    console.log(gradientLine(line, G));
+  }
+  console.log("");
   console.log(chalk.dim("  AI-powered content creation\n"));
   console.log(chalk.dim("  Tips:"));
   console.log(chalk.dim("  1. Ask me to write articles, blog posts, or any content."));
