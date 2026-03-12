@@ -1,17 +1,103 @@
 import React, { useState, useCallback, useEffect, useRef } from "react";
-import { Box, Text, useApp, useStdout } from "ink";
+import { Box, Text, Static, useApp, useStdout } from "ink";
 import TextInput from "ink-text-input";
 import Spinner from "ink-spinner";
 import { Agent } from "@mariozechner/pi-agent-core";
 
 interface Message {
-  role: "user" | "assistant" | "tool" | "status";
+  id: number;
+  role: "user" | "assistant" | "tool" | "status" | "divider";
   text: string;
+  timestamp: string;
 }
 
 interface AppProps {
   agent: Agent;
   config: { provider: string; model: string };
+}
+
+let messageId = 0;
+function nextId() {
+  return ++messageId;
+}
+
+function timeStamp(): string {
+  const now = new Date();
+  return now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+// Tool status icons (Gemini-style)
+const TOOL_ICONS = {
+  start: "◦",
+  success: "✓",
+  error: "✗",
+} as const;
+
+function addMsg(
+  prev: Message[],
+  role: Message["role"],
+  text: string
+): Message[] {
+  return [...prev, { id: nextId(), role, text, timestamp: timeStamp() }];
+}
+
+// Render a single completed message
+function MessageItem({ msg }: { msg: Message }) {
+  switch (msg.role) {
+    case "divider":
+      return (
+        <Box marginY={0}>
+          <Text dimColor>
+            {"─".repeat(60)}
+          </Text>
+        </Box>
+      );
+    case "user":
+      return (
+        <Box flexDirection="column" marginY={0}>
+          <Box>
+            <Text color="green" bold>
+              {"❯ "}
+            </Text>
+            <Text color="green" bold>
+              {msg.text}
+            </Text>
+            <Text dimColor>{"  "}{msg.timestamp}</Text>
+          </Box>
+        </Box>
+      );
+    case "assistant":
+      return (
+        <Box flexDirection="column" marginY={0}>
+          <Box flexDirection="column">
+            {msg.text.split("\n").map((line, i) => (
+              <Box key={i}>
+                {i === 0 ? (
+                  <Text color="cyan" bold>{"✦ "}</Text>
+                ) : (
+                  <Text>{"  "}</Text>
+                )}
+                <Text>{line}</Text>
+              </Box>
+            ))}
+          </Box>
+        </Box>
+      );
+    case "tool":
+      return (
+        <Box>
+          <Text dimColor>{"  "}{msg.text}</Text>
+        </Box>
+      );
+    case "status":
+      return (
+        <Box>
+          <Text color="red">{"  ⚠ "}{msg.text}</Text>
+        </Box>
+      );
+    default:
+      return <Text>{msg.text}</Text>;
+  }
 }
 
 export function App({ agent, config }: AppProps) {
@@ -21,12 +107,37 @@ export function App({ agent, config }: AppProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [streamingText, setStreamingText] = useState("");
+  const [toolStatus, setToolStatus] = useState("");
   const currentTextRef = useRef("");
+  const [elapsedSec, setElapsedSec] = useState(0);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const termHeight = stdout?.rows ?? 24;
-  const headerHeight = 3;
-  const inputHeight = 3;
-  const availableHeight = termHeight - headerHeight - inputHeight - 1;
+  const termWidth = stdout?.columns ?? 80;
+
+  // Elapsed timer during loading
+  useEffect(() => {
+    if (isLoading) {
+      setElapsedSec(0);
+      timerRef.current = setInterval(() => {
+        setElapsedSec((s) => s + 1);
+      }, 1000);
+    } else {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+    }
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, [isLoading]);
+
+  function formatElapsed(sec: number): string {
+    if (sec < 60) return `${sec}s`;
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return `${m}m ${s.toString().padStart(2, "0")}s`;
+  }
 
   useEffect(() => {
     const unsubscribe = agent.subscribe((event) => {
@@ -50,31 +161,29 @@ export function App({ agent, config }: AppProps) {
         case "message_end": {
           const finalText = currentTextRef.current;
           if (finalText) {
-            setMessages((prev) => [
-              ...prev,
-              { role: "assistant", text: finalText },
-            ]);
+            setMessages((prev) => addMsg(prev, "assistant", finalText));
           }
           setStreamingText("");
           currentTextRef.current = "";
           break;
         }
         case "tool_execution_start":
-          setMessages((prev) => [
-            ...prev,
-            { role: "tool", text: `🔧 ${event.toolName}` },
-          ]);
+          setToolStatus(event.toolName);
+          setMessages((prev) =>
+            addMsg(prev, "tool", `${TOOL_ICONS.start} ${event.toolName}`)
+          );
           break;
         case "tool_execution_end":
-          setMessages((prev) => [
-            ...prev,
-            {
-              role: "tool",
-              text: event.isError
-                ? `❌ ${event.toolName} failed`
-                : `✓ ${event.toolName} done`,
-            },
-          ]);
+          setToolStatus("");
+          setMessages((prev) =>
+            addMsg(
+              prev,
+              "tool",
+              event.isError
+                ? `${TOOL_ICONS.error} ${event.toolName} failed`
+                : `${TOOL_ICONS.success} ${event.toolName}`
+            )
+          );
           break;
       }
     });
@@ -92,17 +201,18 @@ export function App({ agent, config }: AppProps) {
       }
 
       setInput("");
-      setMessages((prev) => [...prev, { role: "user", text: trimmed }]);
+      setMessages((prev) => {
+        const withDivider =
+          prev.length > 0 ? addMsg(prev, "divider", "") : prev;
+        return addMsg(withDivider, "user", trimmed);
+      });
       setIsLoading(true);
 
       try {
         await agent.prompt(trimmed);
         await agent.waitForIdle();
       } catch (err: any) {
-        setMessages((prev) => [
-          ...prev,
-          { role: "status", text: `Error: ${err.message}` },
-        ]);
+        setMessages((prev) => addMsg(prev, "status", err.message));
       }
 
       setIsLoading(false);
@@ -110,112 +220,84 @@ export function App({ agent, config }: AppProps) {
     [agent, exit]
   );
 
-  // Build visible messages (show last N lines that fit)
-  const renderMessages = () => {
-    const allLines: { role: string; text: string }[] = [];
-
-    for (const msg of messages) {
-      const lines = msg.text.split("\n");
-      for (const line of lines) {
-        allLines.push({ role: msg.role, text: line });
-      }
-    }
-
-    // Add streaming text
-    if (streamingText) {
-      const lines = streamingText.split("\n");
-      for (const line of lines) {
-        allLines.push({ role: "assistant", text: line });
-      }
-    }
-
-    // Show only lines that fit
-    const visible = allLines.slice(-availableHeight);
-
-    return visible.map((line, i) => {
-      switch (line.role) {
-        case "user":
-          return (
-            <Text key={i} color="green" bold>
-              {"❯ "}
-              {line.text}
-            </Text>
-          );
-        case "assistant":
-          return (
-            <Text key={i} color="white">
-              {line.text}
-            </Text>
-          );
-        case "tool":
-          return (
-            <Text key={i} dimColor>
-              {line.text}
-            </Text>
-          );
-        case "status":
-          return (
-            <Text key={i} color="red">
-              {line.text}
-            </Text>
-          );
-        default:
-          return (
-            <Text key={i}>{line.text}</Text>
-          );
-      }
-    });
-  };
-
   return (
-    <Box flexDirection="column" height={termHeight}>
+    <Box flexDirection="column">
       {/* Header */}
       <Box
-        borderStyle="single"
+        borderStyle="round"
         borderColor="cyan"
         paddingX={1}
         justifyContent="space-between"
       >
         <Text bold color="cyan">
-          ✨ VibPage
+          ✦ VibPage
         </Text>
         <Text dimColor>
-          {config.provider}/{config.model}
+          {config.provider}/{config.model} | "exit" to quit
         </Text>
       </Box>
 
-      {/* Messages Area */}
-      <Box flexDirection="column" flexGrow={1} paddingX={1}>
-        {renderMessages()}
-      </Box>
+      {/* Completed Messages (pinned, won't re-render) */}
+      <Static items={messages}>
+        {(msg) => (
+          <Box key={msg.id} paddingX={1}>
+            <MessageItem msg={msg} />
+          </Box>
+        )}
+      </Static>
+
+      {/* Streaming text (active response) */}
+      {streamingText && (
+        <Box flexDirection="column" paddingX={1}>
+          {streamingText.split("\n").map((line, i) => (
+            <Box key={i}>
+              {i === 0 ? (
+                <Text color="cyan" bold>{"✦ "}</Text>
+              ) : (
+                <Text>{"  "}</Text>
+              )}
+              <Text>{line}</Text>
+            </Box>
+          ))}
+        </Box>
+      )}
+
+      {/* Status bar when loading */}
+      {isLoading && (
+        <Box paddingX={1} gap={1}>
+          <Text color="yellow">
+            <Spinner type="dots" />
+          </Text>
+          <Text color="yellow" bold>
+            {toolStatus
+              ? `Running ${toolStatus}...`
+              : "Thinking..."}
+          </Text>
+          <Text dimColor>
+            {formatElapsed(elapsedSec)}
+          </Text>
+        </Box>
+      )}
 
       {/* Input Area */}
       <Box
-        borderStyle="single"
-        borderColor={isLoading ? "yellow" : "green"}
+        borderStyle="round"
+        borderColor={isLoading ? "gray" : "green"}
         paddingX={1}
+        marginTop={0}
       >
-        {isLoading ? (
-          <Box>
-            <Text color="yellow">
-              <Spinner type="dots" />
-            </Text>
-            <Text color="yellow"> Thinking...</Text>
-          </Box>
-        ) : (
-          <Box>
-            <Text color="green" bold>
-              {"❯ "}
-            </Text>
-            <TextInput
-              value={input}
-              onChange={setInput}
-              onSubmit={handleSubmit}
-              placeholder="Ask me to write something..."
-              focus={!isLoading}
-            />
-          </Box>
-        )}
+        <Text color={isLoading ? "gray" : "green"} bold>
+          {"❯ "}
+        </Text>
+        <TextInput
+          value={input}
+          onChange={setInput}
+          onSubmit={handleSubmit}
+          placeholder={
+            isLoading ? "Waiting for response..." : "Ask me to write something..."
+          }
+          focus={!isLoading}
+        />
       </Box>
     </Box>
   );
