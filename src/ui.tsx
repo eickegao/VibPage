@@ -1,14 +1,13 @@
 import React, { useState, useCallback, useEffect, useRef } from "react";
-import { Box, Text, Static, useApp, useStdout } from "ink";
+import { Box, Text, Static, useApp } from "ink";
 import TextInput from "ink-text-input";
 import Spinner from "ink-spinner";
 import { Agent } from "@mariozechner/pi-agent-core";
 
 interface Message {
   id: number;
-  role: "user" | "assistant" | "tool" | "status" | "divider";
+  role: "user" | "assistant" | "tool" | "status";
   text: string;
-  timestamp: string;
 }
 
 interface AppProps {
@@ -21,79 +20,45 @@ function nextId() {
   return ++messageId;
 }
 
-function timeStamp(): string {
-  const now = new Date();
-  return now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-}
-
-// Tool status icons (Gemini-style)
 const TOOL_ICONS = {
   start: "◦",
   success: "✓",
   error: "✗",
 } as const;
 
-function addMsg(
-  prev: Message[],
-  role: Message["role"],
-  text: string
-): Message[] {
-  return [...prev, { id: nextId(), role, text, timestamp: timeStamp() }];
-}
-
-// Render a single completed message
 function MessageItem({ msg }: { msg: Message }) {
   switch (msg.role) {
-    case "divider":
-      return (
-        <Box marginY={0}>
-          <Text dimColor>
-            {"─".repeat(60)}
-          </Text>
-        </Box>
-      );
     case "user":
       return (
-        <Box flexDirection="column" marginY={0}>
-          <Box>
-            <Text color="green" bold>
-              {"❯ "}
-            </Text>
-            <Text color="green" bold>
-              {msg.text}
-            </Text>
-            <Text dimColor>{"  "}{msg.timestamp}</Text>
-          </Box>
+        <Box flexDirection="column">
+          <Text>{""}</Text>
+          <Text color="green" bold>
+            {"  ❯ "}{msg.text}
+          </Text>
         </Box>
       );
     case "assistant":
       return (
-        <Box flexDirection="column" marginY={0}>
-          <Box flexDirection="column">
-            {msg.text.split("\n").map((line, i) => (
-              <Box key={i}>
-                {i === 0 ? (
-                  <Text color="cyan" bold>{"✦ "}</Text>
-                ) : (
-                  <Text>{"  "}</Text>
-                )}
-                <Text>{line}</Text>
-              </Box>
-            ))}
-          </Box>
+        <Box flexDirection="column">
+          {msg.text.split("\n").map((line, i) => (
+            <Text key={i}>
+              {i === 0 ? (
+                <Text color="cyan" bold>{"  ✦ "}</Text>
+              ) : (
+                <Text>{"    "}</Text>
+              )}
+              <Text>{line}</Text>
+            </Text>
+          ))}
         </Box>
       );
     case "tool":
       return (
-        <Box>
-          <Text dimColor>{"  "}{msg.text}</Text>
-        </Box>
+        <Text dimColor>{"    "}{msg.text}</Text>
       );
     case "status":
       return (
-        <Box>
-          <Text color="red">{"  ⚠ "}{msg.text}</Text>
-        </Box>
+        <Text color="red">{"  ⚠ "}{msg.text}</Text>
       );
     default:
       return <Text>{msg.text}</Text>;
@@ -102,7 +67,6 @@ function MessageItem({ msg }: { msg: Message }) {
 
 export function App({ agent, config }: AppProps) {
   const { exit } = useApp();
-  const { stdout } = useStdout();
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -112,9 +76,6 @@ export function App({ agent, config }: AppProps) {
   const [elapsedSec, setElapsedSec] = useState(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const termWidth = stdout?.columns ?? 80;
-
-  // Elapsed timer during loading
   useEffect(() => {
     if (isLoading) {
       setElapsedSec(0);
@@ -161,7 +122,10 @@ export function App({ agent, config }: AppProps) {
         case "message_end": {
           const finalText = currentTextRef.current;
           if (finalText) {
-            setMessages((prev) => addMsg(prev, "assistant", finalText));
+            setMessages((prev) => [
+              ...prev,
+              { id: nextId(), role: "assistant", text: finalText },
+            ]);
           }
           setStreamingText("");
           currentTextRef.current = "";
@@ -169,21 +133,27 @@ export function App({ agent, config }: AppProps) {
         }
         case "tool_execution_start":
           setToolStatus(event.toolName);
-          setMessages((prev) =>
-            addMsg(prev, "tool", `${TOOL_ICONS.start} ${event.toolName}`)
-          );
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: nextId(),
+              role: "tool",
+              text: `${TOOL_ICONS.start} ${event.toolName}`,
+            },
+          ]);
           break;
         case "tool_execution_end":
           setToolStatus("");
-          setMessages((prev) =>
-            addMsg(
-              prev,
-              "tool",
-              event.isError
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: nextId(),
+              role: "tool",
+              text: event.isError
                 ? `${TOOL_ICONS.error} ${event.toolName} failed`
-                : `${TOOL_ICONS.success} ${event.toolName}`
-            )
-          );
+                : `${TOOL_ICONS.success} ${event.toolName}`,
+            },
+          ]);
           break;
       }
     });
@@ -201,18 +171,20 @@ export function App({ agent, config }: AppProps) {
       }
 
       setInput("");
-      setMessages((prev) => {
-        const withDivider =
-          prev.length > 0 ? addMsg(prev, "divider", "") : prev;
-        return addMsg(withDivider, "user", trimmed);
-      });
+      setMessages((prev) => [
+        ...prev,
+        { id: nextId(), role: "user", text: trimmed },
+      ]);
       setIsLoading(true);
 
       try {
         await agent.prompt(trimmed);
         await agent.waitForIdle();
       } catch (err: any) {
-        setMessages((prev) => addMsg(prev, "status", err.message));
+        setMessages((prev) => [
+          ...prev,
+          { id: nextId(), role: "status", text: err.message },
+        ]);
       }
 
       setIsLoading(false);
@@ -222,79 +194,59 @@ export function App({ agent, config }: AppProps) {
 
   return (
     <Box flexDirection="column">
-      {/* Header */}
-      <Box
-        borderStyle="round"
-        borderColor="cyan"
-        paddingX={1}
-        justifyContent="space-between"
-      >
-        <Text bold color="cyan">
-          ✦ VibPage
-        </Text>
-        <Text dimColor>
-          {config.provider}/{config.model} | "exit" to quit
-        </Text>
-      </Box>
-
-      {/* Completed Messages (pinned, won't re-render) */}
+      {/* All completed messages - pinned, never re-render */}
       <Static items={messages}>
         {(msg) => (
-          <Box key={msg.id} paddingX={1}>
-            <MessageItem msg={msg} />
-          </Box>
+          <MessageItem key={msg.id} msg={msg} />
         )}
       </Static>
 
-      {/* Streaming text (active response) */}
+      {/* Live area: streaming + status + input */}
+
+      {/* Streaming text */}
       {streamingText && (
-        <Box flexDirection="column" paddingX={1}>
+        <Box flexDirection="column">
           {streamingText.split("\n").map((line, i) => (
-            <Box key={i}>
+            <Text key={i}>
               {i === 0 ? (
-                <Text color="cyan" bold>{"✦ "}</Text>
+                <Text color="cyan" bold>{"  ✦ "}</Text>
               ) : (
-                <Text>{"  "}</Text>
+                <Text>{"    "}</Text>
               )}
               <Text>{line}</Text>
-            </Box>
+            </Text>
           ))}
         </Box>
       )}
 
-      {/* Status bar when loading */}
+      {/* Loading status */}
       {isLoading && (
-        <Box paddingX={1} gap={1}>
+        <Box>
+          <Text>{"  "}</Text>
           <Text color="yellow">
             <Spinner type="dots" />
           </Text>
           <Text color="yellow" bold>
-            {toolStatus
-              ? `Running ${toolStatus}...`
-              : "Thinking..."}
+            {" "}
+            {toolStatus ? `${toolStatus}` : "Thinking"}
           </Text>
           <Text dimColor>
-            {formatElapsed(elapsedSec)}
+            {"  "}{formatElapsed(elapsedSec)}
           </Text>
         </Box>
       )}
 
-      {/* Input Area */}
-      <Box
-        borderStyle="round"
-        borderColor={isLoading ? "gray" : "green"}
-        paddingX={1}
-        marginTop={0}
-      >
+      {/* Input */}
+      <Box>
         <Text color={isLoading ? "gray" : "green"} bold>
-          {"❯ "}
+          {"  ❯ "}
         </Text>
         <TextInput
           value={input}
           onChange={setInput}
           onSubmit={handleSubmit}
           placeholder={
-            isLoading ? "Waiting for response..." : "Ask me to write something..."
+            isLoading ? "waiting..." : "Ask me to write something..."
           }
           focus={!isLoading}
         />

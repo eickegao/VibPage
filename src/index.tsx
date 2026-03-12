@@ -1,11 +1,32 @@
 #!/usr/bin/env node
 
 import { program } from "commander";
+import chalk from "chalk";
 import React from "react";
 import { render } from "ink";
 import { loadConfig } from "./config.js";
 import { createAgent } from "./agent.js";
 import { App } from "./ui.js";
+
+const BANNER = `
+${chalk.cyan.bold("  ╦  ╦╦╔╗ ╔═╗╔═╗╔═╗╔═╗")}
+${chalk.cyan.bold("  ╚╗╔╝║╠╩╗╠═╝╠═╣║ ╦║╣ ")}
+${chalk.cyan.bold("   ╚╝ ╩╚═╝╩  ╩ ╩╚═╝╚═╝")}
+`;
+
+function showWelcome(provider: string, model: string) {
+  // Clear screen
+  process.stdout.write("\x1B[2J\x1B[H");
+
+  console.log(BANNER);
+  console.log(chalk.dim("  AI-powered content creation\n"));
+  console.log(chalk.dim("  Tips:"));
+  console.log(chalk.dim("  1. Ask me to write articles, blog posts, or any content."));
+  console.log(chalk.dim("  2. I can search the web and fetch pages for research."));
+  console.log(chalk.dim("  3. I can take screenshots of web pages."));
+  console.log(chalk.dim('  4. Type "exit" to quit.\n'));
+  console.log(chalk.dim(`  Using: ${provider}/${model}\n`));
+}
 
 program
   .name("vibpage")
@@ -20,6 +41,8 @@ program
     if (options.provider) config.provider = options.provider;
     if (options.model) config.model = options.model;
     if (options.output) config.outputDir = options.output;
+
+    showWelcome(config.provider, config.model);
 
     const agent = createAgent(config);
 
