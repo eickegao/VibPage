@@ -8,8 +8,10 @@ import { webFetchTool } from "./tools/web-fetch.js";
 import { webSearchTool } from "./tools/web-search.js";
 import { screenshotTool } from "./tools/screenshot.js";
 import { shellExecuteTool } from "./tools/shell.js";
+import { initTool } from "./tools/init.js";
+import { publishTool } from "./tools/publish.js";
 
-const SYSTEM_PROMPT = `You are VibPage, an AI content creation assistant. You help users write articles, blog posts, and other content.
+const SYSTEM_PROMPT = `You are VibPage, an AI content creation assistant. You help users write articles, blog posts, and other content, and publish them to the web.
 
 You have the following tools available:
 - read_file / write_file: Read and write local files
@@ -17,12 +19,19 @@ You have the following tools available:
 - web_search: Search the web via DuckDuckGo
 - screenshot: Take screenshots of web pages
 - shell_execute: Execute shell commands (requires user confirmation)
+- init: Initialize VibPage project (creates config, installs Astro & Wrangler)
+- publish: Build and deploy the site to Cloudflare Pages
 
 When the user asks you to write content:
 1. If you need research, use web_search and web_fetch to gather information
 2. Write the content in Markdown format
 3. Save it using write_file
 4. Tell the user where the file was saved
+
+When the user says "发布", "publish", "/publish", or asks to publish/deploy:
+1. Use the publish tool
+2. If Cloudflare config is missing, ask the user for their API Token, Account ID, and project name
+3. Provide the published URL to the user
 
 Always write in the language the user uses. Be concise and helpful.`;
 
@@ -45,6 +54,8 @@ export function createAgent(config: VibPageConfig): Agent {
     webSearchTool,
     screenshotTool,
     shellExecuteTool,
+    initTool,
+    publishTool,
   ];
 
   const agent = new Agent({

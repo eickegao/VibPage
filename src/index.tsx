@@ -2,11 +2,13 @@
 
 import { program } from "commander";
 import chalk from "chalk";
+import readline from "readline";
 import React from "react";
 import { render } from "ink";
 import { loadConfig } from "./config.js";
 import { createAgent } from "./agent.js";
 import { App } from "./ui.js";
+import { initTool } from "./tools/init.js";
 
 // 5 gradient anchor colors (teal to light cyan)
 const COLORS: [number, number, number][] = [
@@ -60,6 +62,23 @@ const BANNER_LINES = [
   "   ╚═══╝   ╚═╝ ╚═════╝  ╚═╝      ╚═╝  ╚═╝  ╚═════╝  ╚══════╝",
 ];
 
+function askTrust(): Promise<boolean> {
+  return new Promise((resolve) => {
+    const rl = readline.createInterface({
+      input: process.stdin,
+      output: process.stdout,
+    });
+    const cwd = process.cwd();
+    rl.question(
+      chalk.yellow(`  Do you trust this directory? ${chalk.white(cwd)} (y/N) `),
+      (answer) => {
+        rl.close();
+        resolve(answer.trim().toLowerCase() === "y");
+      }
+    );
+  });
+}
+
 function showWelcome(provider: string, model: string) {
   process.stdout.write("\x1B[2J\x1B[H");
 
@@ -92,6 +111,29 @@ program
     if (options.output) config.outputDir = options.output;
 
     showWelcome(config.provider, config.model);
+
+    // Trust confirmation
+    const trusted = await askTrust();
+    if (!trusted) {
+      console.log(chalk.yellow("  Exiting. Run vibpage in a directory you trust."));
+      process.exit(0);
+    }
+
+    // Auto init
+    console.log(chalk.rgb(105, 203, 212)("  Initializing project..."));
+    try {
+      const result = await initTool.execute("auto-init", {});
+      const text = result.content
+        .filter((c): c is { type: "text"; text: string } => c.type === "text")
+        .map((c) => c.text)
+        .join("\n");
+      for (const line of text.split("\n")) {
+        console.log(chalk.white(`  ${line}`));
+      }
+      console.log("");
+    } catch (err: any) {
+      console.log(chalk.red(`  Init failed: ${err.message}\n`));
+    }
 
     const agent = createAgent(config);
 
