@@ -113,6 +113,11 @@ const WELCOME_TEXTS: Record<Language, { subtitle: string; tips: string[]; quit: 
     tips: ["기사, 블로그 또는 모든 콘텐츠를 작성해 드립니다.", "웹을 검색하고 자료를 가져올 수 있습니다.", "웹 페이지의 스크린샷을 찍을 수 있습니다."],
     quit: '"exit"를 입력하면 종료됩니다.',
   },
+  ja: {
+    subtitle: "AI搭載コンテンツ作成",
+    tips: ["記事、ブログ、あらゆるコンテンツの作成をお手伝いします。", "ウェブを検索して資料を取得できます。", "ウェブページのスクリーンショットを撮れます。"],
+    quit: '"exit" と入力して終了します。',
+  },
 };
 
 function showWelcome(provider: string, model: string, language: Language) {

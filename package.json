@@ -17,7 +17,7 @@
     "cli",
     "content"
   ],
-  "license": "Apache-2.0",
+  "license": "GPL-3.0",
   "dependencies": {
     "@mariozechner/pi-agent-core": "^0.57.1",
     "@mariozechner/pi-ai": "^0.57.1",

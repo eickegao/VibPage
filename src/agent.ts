@@ -11,6 +11,7 @@ import { screenshotTool } from "./tools/screenshot.js";
 import { shellExecuteTool } from "./tools/shell.js";
 import { initTool } from "./tools/init.js";
 import { publishTool } from "./tools/publish.js";
+import { pushSocialTool } from "./tools/push-social.js";
 
 export function buildSystemPrompt(language: Language, author?: string): string {
   const langName = LANGUAGE_LABELS[language];
@@ -29,6 +30,7 @@ You have the following tools available:
 - shell_execute: Execute shell commands (only safe, non-destructive commands)
 - init: Initialize VibPage project (creates config, installs Astro & Wrangler)
 - publish: Build and deploy the site to Cloudflare Pages
+- push_social: Post content to social media (X/Twitter) using browser automation
 
 When the user asks you to write content:
 1. If you need research, use web_search and web_fetch to gather information
@@ -65,6 +67,7 @@ export function createAgent(config: VibPageConfig, language: Language = "zh-CN",
     shellExecuteTool,
     initTool,
     publishTool,
+    pushSocialTool,
   ];
 
   const agent = new Agent({

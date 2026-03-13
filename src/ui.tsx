@@ -10,6 +10,7 @@ import {
   saveProjectConfig,
 } from "./project-config.js";
 import { buildSystemPrompt } from "./agent.js";
+import { closeBrowser, openBrowser } from "./tools/push-social.js";
 
 interface Message {
   id: number;
@@ -35,39 +36,144 @@ const TOOL_ICONS = {
 
 interface SlashCommand {
   name: string;
-  description: string;
+  description: Record<Language, string>;
   prompt: string;
 }
 
 const SLASH_COMMANDS: SlashCommand[] = [
   {
     name: "/publish",
-    description: "Build and deploy site to Cloudflare Pages",
+    description: {
+      "zh-CN": "构建并部署网站到 Cloudflare Pages",
+      "zh-TW": "建置並部署網站到 Cloudflare Pages",
+      en: "Build and deploy site to Cloudflare Pages",
+      fr: "Construire et déployer sur Cloudflare Pages",
+      de: "Website erstellen und auf Cloudflare Pages bereitstellen",
+      es: "Construir y desplegar en Cloudflare Pages",
+      pt: "Construir e implantar no Cloudflare Pages",
+      ko: "Cloudflare Pages에 사이트 빌드 및 배포",
+      ja: "Cloudflare Pages にサイトをビルド・デプロイ",
+    },
     prompt: "Please publish my site to Cloudflare Pages using the publish tool.",
   },
   {
+    name: "/push",
+    description: {
+      "zh-CN": "推送内容到社交媒体",
+      "zh-TW": "推送內容到社群媒體",
+      en: "Push content to social media",
+      fr: "Publier du contenu sur les réseaux sociaux",
+      de: "Inhalte in sozialen Medien veröffentlichen",
+      es: "Publicar contenido en redes sociales",
+      pt: "Publicar conteúdo nas redes sociais",
+      ko: "소셜 미디어에 콘텐츠 게시",
+      ja: "ソーシャルメディアにコンテンツを投稿",
+    },
+    prompt: "Please help me push content to social media. Ask me which platform (currently X/Twitter and LinkedIn are supported) and what content I want to post, then use the push_social tool.",
+  },
+  {
     name: "/init",
-    description: "Initialize VibPage project",
+    description: {
+      "zh-CN": "初始化 VibPage 项目",
+      "zh-TW": "初始化 VibPage 專案",
+      en: "Initialize VibPage project",
+      fr: "Initialiser le projet VibPage",
+      de: "VibPage-Projekt initialisieren",
+      es: "Inicializar proyecto VibPage",
+      pt: "Inicializar projeto VibPage",
+      ko: "VibPage 프로젝트 초기화",
+      ja: "VibPage プロジェクトを初期化",
+    },
     prompt: "Please initialize this VibPage project using the init tool.",
   },
   {
     name: "/status",
-    description: "Show project status",
+    description: {
+      "zh-CN": "显示项目状态",
+      "zh-TW": "顯示專案狀態",
+      en: "Show project status",
+      fr: "Afficher l'état du projet",
+      de: "Projektstatus anzeigen",
+      es: "Mostrar estado del proyecto",
+      pt: "Mostrar status do projeto",
+      ko: "프로젝트 상태 표시",
+      ja: "プロジェクトの状態を表示",
+    },
     prompt: "Please check the current project status: is it initialized? Are Astro and Wrangler installed? Is Cloudflare configured? Show me a summary.",
   },
   {
     name: "/language",
-    description: "Set response language",
+    description: {
+      "zh-CN": "设置语言",
+      "zh-TW": "設定語言",
+      en: "Set response language",
+      fr: "Définir la langue",
+      de: "Sprache einstellen",
+      es: "Establecer idioma",
+      pt: "Definir idioma",
+      ko: "언어 설정",
+      ja: "言語を設定",
+    },
+    prompt: "",
+  },
+  {
+    name: "/open-browser",
+    description: {
+      "zh-CN": "打开浏览器",
+      "zh-TW": "開啟瀏覽器",
+      en: "Open browser (for login or browsing)",
+      fr: "Ouvrir le navigateur",
+      de: "Browser öffnen",
+      es: "Abrir navegador",
+      pt: "Abrir navegador",
+      ko: "브라우저 열기",
+      ja: "ブラウザを開く",
+    },
+    prompt: "",
+  },
+  {
+    name: "/close-browser",
+    description: {
+      "zh-CN": "关闭浏览器",
+      "zh-TW": "關閉瀏覽器",
+      en: "Close the browser",
+      fr: "Fermer le navigateur",
+      de: "Browser schließen",
+      es: "Cerrar navegador",
+      pt: "Fechar navegador",
+      ko: "브라우저 닫기",
+      ja: "ブラウザを閉じる",
+    },
     prompt: "",
   },
   {
     name: "/help",
-    description: "Show available commands",
+    description: {
+      "zh-CN": "显示所有命令",
+      "zh-TW": "顯示所有命令",
+      en: "Show available commands",
+      fr: "Afficher les commandes",
+      de: "Verfügbare Befehle anzeigen",
+      es: "Mostrar comandos disponibles",
+      pt: "Mostrar comandos disponíveis",
+      ko: "사용 가능한 명령어 표시",
+      ja: "利用可能なコマンドを表示",
+    },
     prompt: "",
   },
   {
     name: "/exit",
-    description: "Quit VibPage",
+    description: {
+      "zh-CN": "退出 VibPage",
+      "zh-TW": "退出 VibPage",
+      en: "Quit VibPage",
+      fr: "Quitter VibPage",
+      de: "VibPage beenden",
+      es: "Salir de VibPage",
+      pt: "Sair do VibPage",
+      ko: "VibPage 종료",
+      ja: "VibPage を終了",
+    },
     prompt: "",
   },
 ];
@@ -81,6 +187,7 @@ const LANGUAGE_OPTIONS: { code: Language; label: string }[] = [
   { code: "es", label: "Español" },
   { code: "pt", label: "Português" },
   { code: "ko", label: "한국어" },
+  { code: "ja", label: "日本語" },
 ];
 
 type UIMode = "normal" | "command-select" | "language-select";
@@ -145,6 +252,7 @@ export function App({ agent, config }: AppProps) {
   const [toolStatus, setToolStatus] = useState("");
   const currentTextRef = useRef("");
   const [elapsedSec, setElapsedSec] = useState(0);
+  const [currentLang, setCurrentLang] = useState<Language>(loadProjectConfig().language);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const termWidth = stdout?.columns || 80;
 
@@ -212,6 +320,7 @@ export function App({ agent, config }: AppProps) {
           projectConfig.language = option.code;
           saveProjectConfig(projectConfig);
           agent.setSystemPrompt(buildSystemPrompt(option.code));
+          setCurrentLang(option.code);
           setMode("normal");
           setMessages((prev) => [
             ...prev,
@@ -363,10 +472,43 @@ export function App({ agent, config }: AppProps) {
         return;
       }
 
+      // /open-browser
+      if (cmd.name === "/open-browser") {
+        setMessages((prev) => [
+          ...prev,
+          { id: nextId(), role: "user", text: cmd.name },
+        ]);
+        const ok = await openBrowser("https://x.com");
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: nextId(),
+            role: "assistant",
+            text: ok ? "Browser opened." : "Failed to open browser. Run: npx playwright install chromium",
+          },
+        ]);
+        return;
+      }
+
+      // /close-browser
+      if (cmd.name === "/close-browser") {
+        const closed = await closeBrowser();
+        setMessages((prev) => [
+          ...prev,
+          { id: nextId(), role: "user", text: cmd.name },
+          {
+            id: nextId(),
+            role: "assistant",
+            text: closed ? "Browser closed." : "No browser is open.",
+          },
+        ]);
+        return;
+      }
+
       // /help
       if (cmd.name === "/help") {
         const helpText = SLASH_COMMANDS.map(
-          (c) => `${c.name}  ${c.description}`
+          (c) => `${c.name}  ${c.description[currentLang] || c.description.en}`
         ).join("\n");
         setMessages((prev) => [
           ...prev,
@@ -494,13 +636,13 @@ export function App({ agent, config }: AppProps) {
                 <>
                   <Text color="#26AAB9" bold>{"❯ "}</Text>
                   <Text color="#26AAB9" bold>{cmd.name}</Text>
-                  <Text color="#97DCE2">{"  "}{cmd.description}</Text>
+                  <Text color="#97DCE2">{"  "}{cmd.description[currentLang] || cmd.description.en}</Text>
                 </>
               ) : (
                 <>
                   <Text>{"  "}</Text>
                   <Text color="white">{cmd.name}</Text>
-                  <Text color="gray">{"  "}{cmd.description}</Text>
+                  <Text color="gray">{"  "}{cmd.description[currentLang] || cmd.description.en}</Text>
                 </>
               )}
             </Box>

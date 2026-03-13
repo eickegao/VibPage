@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync, existsSync, chmodSync } from "fs";
 import { join } from "path";
 
-export type Language = "zh-CN" | "zh-TW" | "en" | "fr" | "de" | "es" | "pt" | "ko";
+export type Language = "zh-CN" | "zh-TW" | "en" | "fr" | "de" | "es" | "pt" | "ko" | "ja";
 
 export const LANGUAGE_LABELS: Record<Language, string> = {
   "zh-CN": "简体中文",
@@ -12,6 +12,7 @@ export const LANGUAGE_LABELS: Record<Language, string> = {
   "es": "Español",
   "pt": "Português",
   "ko": "한국어",
+  "ja": "日本語",
 };
 
 export interface ProjectConfig {
