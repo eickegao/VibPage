@@ -1,7 +1,7 @@
 {
   "name": "vibpage",
   "version": "0.1.20",
-  "description": "AI-powered browser automation CLI (RPA)",
+  "description": "AI-powered browser automation (RPA) CLI",
   "type": "module",
   "bin": {
     "vibpage": "./dist/index.js"
@@ -21,7 +21,7 @@
   "dependencies": {
     "@mariozechner/pi-agent-core": "^0.57.1",
     "@mariozechner/pi-ai": "^0.57.1",
-    "chalk": "^5.6.2",
+"chalk": "^5.6.2",
     "commander": "^14.0.3",
     "ink": "^6.8.0",
     "ink-spinner": "^5.0.0",
@@ -34,8 +34,6 @@
     "@types/node": "^25.4.0",
     "@types/react": "^19.2.14",
     "@types/turndown": "^5.0.6",
-    "astro": "^6.0.4",
-    "typescript": "^5.9.3",
-    "wrangler": "^4.72.0"
+    "typescript": "^5.9.3"
   }
 }

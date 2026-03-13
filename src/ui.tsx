@@ -41,22 +41,7 @@ interface SlashCommand {
 }
 
 const SLASH_COMMANDS: SlashCommand[] = [
-  {
-    name: "/publish",
-    description: {
-      "zh-CN": "构建并部署网站到 Cloudflare Pages",
-      "zh-TW": "建置並部署網站到 Cloudflare Pages",
-      en: "Build and deploy site to Cloudflare Pages",
-      fr: "Construire et déployer sur Cloudflare Pages",
-      de: "Website erstellen und auf Cloudflare Pages bereitstellen",
-      es: "Construir y desplegar en Cloudflare Pages",
-      pt: "Construir e implantar no Cloudflare Pages",
-      ko: "Cloudflare Pages에 사이트 빌드 및 배포",
-      ja: "Cloudflare Pages にサイトをビルド・デプロイ",
-    },
-    prompt: "Please publish my site to Cloudflare Pages using the publish tool.",
-  },
-  {
+{
     name: "/action",
     description: {
       "zh-CN": "管理自动化动作（创建/列表/运行）",
@@ -85,36 +70,6 @@ const SLASH_COMMANDS: SlashCommand[] = [
       ja: "ブラウザ自動化タスクを実行",
     },
     prompt: "Please help me run a browser automation task. Ask me which website URL I want to go to and what task I want to perform, then use the browser_task tool.",
-  },
-  {
-    name: "/init",
-    description: {
-      "zh-CN": "初始化 VibPage 项目",
-      "zh-TW": "初始化 VibPage 專案",
-      en: "Initialize VibPage project",
-      fr: "Initialiser le projet VibPage",
-      de: "VibPage-Projekt initialisieren",
-      es: "Inicializar proyecto VibPage",
-      pt: "Inicializar projeto VibPage",
-      ko: "VibPage 프로젝트 초기화",
-      ja: "VibPage プロジェクトを初期化",
-    },
-    prompt: "Please initialize this VibPage project using the init tool.",
-  },
-  {
-    name: "/status",
-    description: {
-      "zh-CN": "显示项目状态",
-      "zh-TW": "顯示專案狀態",
-      en: "Show project status",
-      fr: "Afficher l'état du projet",
-      de: "Projektstatus anzeigen",
-      es: "Mostrar estado del proyecto",
-      pt: "Mostrar status do projeto",
-      ko: "프로젝트 상태 표시",
-      ja: "プロジェクトの状態を表示",
-    },
-    prompt: "Please check the current project status: is it initialized? Are Astro and Wrangler installed? Is Cloudflare configured? Show me a summary.",
   },
   {
     name: "/language",

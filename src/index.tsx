@@ -74,48 +74,48 @@ const BANNER_LINES = [
 
 const WELCOME_TEXTS: Record<Language, { subtitle: string; tips: string[]; quit: string }> = {
   "zh-CN": {
-    subtitle: "AI 驱动的浏览器自动化",
-    tips: ["用自然语言描述任务，AI 自动操作浏览器。", "支持任意网站：填表、发帖、下载报表等。", "登录状态自动保存，无需重复登录。"],
+    subtitle: "AI 驱动的 RPA 自动化",
+    tips: ["用自然语言描述任务，AI 自动操作浏览器。", "支持任意网站：填表、发帖、下载报告等。", "创建 Action 保存常用流程，一键复用。"],
     quit: '输入 "exit" 退出。',
   },
   "zh-TW": {
-    subtitle: "AI 驅動的瀏覽器自動化",
-    tips: ["用自然語言描述任務，AI 自動操作瀏覽器。", "支援任意網站：填表、發帖、下載報表等。", "登入狀態自動保存，無需重複登入。"],
+    subtitle: "AI 驅動的 RPA 自動化",
+    tips: ["用自然語言描述任務，AI 自動操作瀏覽器。", "支援任意網站：填表、發帖、下載報告等。", "建立 Action 保存常用流程，一鍵複用。"],
     quit: '輸入 "exit" 退出。',
   },
   en: {
-    subtitle: "AI-powered browser automation",
-    tips: ["Describe tasks in natural language, AI operates the browser.", "Works on any website: fill forms, post, download reports, etc.", "Login sessions are saved automatically."],
+    subtitle: "AI-powered RPA automation",
+    tips: ["Describe tasks in natural language, AI operates the browser for you.", "Works on any website: forms, posts, reports, etc.", "Create Actions to save and reuse workflows."],
     quit: 'Type "exit" to quit.',
   },
   fr: {
-    subtitle: "Automatisation navigateur par IA",
-    tips: ["Décrivez vos tâches en langage naturel, l'IA pilote le navigateur.", "Fonctionne sur tout site : formulaires, publications, rapports.", "Les sessions de connexion sont sauvegardées."],
+    subtitle: "Automatisation RPA par IA",
+    tips: ["Décrivez vos tâches, l'IA pilote le navigateur pour vous.", "Tout site web : formulaires, publications, rapports, etc.", "Créez des Actions pour sauvegarder et réutiliser vos workflows."],
     quit: 'Tapez "exit" pour quitter.',
   },
   de: {
-    subtitle: "KI-gestützte Browser-Automatisierung",
-    tips: ["Beschreiben Sie Aufgaben in natürlicher Sprache, KI steuert den Browser.", "Funktioniert auf jeder Website: Formulare, Posts, Berichte.", "Login-Sitzungen werden automatisch gespeichert."],
+    subtitle: "KI-gestützte RPA-Automatisierung",
+    tips: ["Beschreiben Sie Aufgaben, KI steuert den Browser für Sie.", "Jede Website: Formulare, Posts, Berichte usw.", "Erstellen Sie Actions um Workflows zu speichern und wiederzuverwenden."],
     quit: '"exit" eingeben zum Beenden.',
   },
   es: {
-    subtitle: "Automatización de navegador con IA",
-    tips: ["Describe tareas en lenguaje natural, la IA opera el navegador.", "Funciona en cualquier sitio: formularios, publicaciones, informes.", "Las sesiones se guardan automáticamente."],
+    subtitle: "Automatización RPA con IA",
+    tips: ["Describe tareas, la IA opera el navegador por ti.", "Cualquier sitio web: formularios, publicaciones, informes, etc.", "Crea Actions para guardar y reutilizar flujos de trabajo."],
     quit: 'Escribe "exit" para salir.',
   },
   pt: {
-    subtitle: "Automação de navegador com IA",
-    tips: ["Descreva tarefas em linguagem natural, a IA opera o navegador.", "Funciona em qualquer site: formulários, postagens, relatórios.", "As sessões são salvas automaticamente."],
+    subtitle: "Automação RPA com IA",
+    tips: ["Descreva tarefas, a IA opera o navegador por você.", "Qualquer site: formulários, postagens, relatórios, etc.", "Crie Actions para salvar e reutilizar fluxos de trabalho."],
     quit: 'Digite "exit" para sair.',
   },
   ko: {
-    subtitle: "AI 기반 브라우저 자동화",
-    tips: ["자연어로 작업을 설명하면 AI가 브라우저를 조작합니다.", "모든 웹사이트에서 작동: 양식 작성, 게시, 보고서 다운로드 등.", "로그인 세션이 자동으로 저장됩니다."],
+    subtitle: "AI 기반 RPA 자동화",
+    tips: ["자연어로 작업을 설명하면 AI가 브라우저를 조작합니다.", "모든 웹사이트에서 작동: 양식 작성, 게시, 보고서 다운로드 등.", "Action을 만들어 자주 사용하는 워크플로를 저장하고 재사용하세요."],
     quit: '"exit"를 입력하면 종료됩니다.',
   },
   ja: {
-    subtitle: "AI搭載ブラウザ自動化",
-    tips: ["自然言語でタスクを記述すると、AIがブラウザを操作します。", "あらゆるサイトに対応：フォーム入力、投稿、レポートDLなど。", "ログイン状態は自動的に保存されます。"],
+    subtitle: "AI搭載RPA自動化",
+    tips: ["自然言語でタスクを記述すると、AIがブラウザを操作します。", "あらゆるサイトに対応：フォーム入力、投稿、レポートDLなど。", "Actionを作成してワークフローを保存・再利用できます。"],
     quit: '"exit" と入力して終了します。',
   },
 };
@@ -139,7 +139,7 @@ function showWelcome(provider: string, model: string, language: Language) {
 
 program
   .name("vibpage")
-  .description("AI-powered browser automation CLI (RPA)")
+  .description("AI-powered browser automation (RPA) CLI")
   .version(pkg.version)
   .option("-m, --model <model>", "AI model to use")
   .option("-p, --provider <provider>", "AI provider (anthropic/openai/google)")

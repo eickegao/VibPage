@@ -18,5 +18,5 @@ AI-powered browser automation (RPA) CLI tool.
 - src/index.ts — CLI entry point
 - src/agent.ts — Agent setup and event loop
 - src/config.ts — Config management
-- src/tools/ — AI agent tools (browser-task, file, web-fetch, web-search, screenshot, shell, publish, init)
+- src/tools/ — AI agent tools (browser-task, action, file, web-fetch, web-search, screenshot, shell)
 - src/utils/ — Utilities

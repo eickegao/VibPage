@@ -8,9 +8,8 @@ AI-powered browser automation (RPA) CLI. Describe tasks in natural language, and
 
 - **Browser Automation** - AI sees the screen and operates the browser like a human, powered by OpenAI Computer Use
 - **Any Website** - Works on any site: X, LinkedIn, Gmail, Notion, internal tools, etc.
+- **Actions** - Save reusable automation workflows as Markdown files, share them by copying `.md` files
 - **Persistent Sessions** - Login once, sessions are saved for future runs
-- **Content Creation** - Write articles and blog posts with AI assistance
-- **Web Publishing** - Build with Astro and deploy to Cloudflare Pages via `/publish`
 - **Multi-Language** - Supports 9 languages: 简体中文, 繁體中文, English, Français, Deutsch, Español, Português, 한국어, 日本語
 - **Slash Commands** - Arrow-key navigable command menu with `/` prefix
 - **Multi-Model** - Supports Anthropic, OpenAI, and Google AI models
@@ -68,10 +67,8 @@ Type `/` to see available commands:
 
 | Command | Description |
 |---------|-------------|
+| `/action` | Manage automation actions |
 | `/run` | Run a browser automation task |
-| `/publish` | Build and deploy to Cloudflare Pages |
-| `/init` | Initialize project |
-| `/status` | Show project status |
 | `/language` | Set response language |
 | `/open-browser` | Open browser |
 | `/close-browser` | Close browser |
@@ -86,6 +83,18 @@ Type `/` to see available commands:
 4. The loop continues until the task is complete
 5. Browser sessions are preserved in `~/.vibpage/browser-data/`
 
+### Actions
+
+Actions are reusable automation workflows stored as Markdown files in `~/.vibpage/Actions/`. They support parameters with `{param_name}` syntax.
+
+```
+> 创建一个 Action：自动发推文
+> 运行 Action "post-to-x"，内容是 "Hello World"
+> 列出所有 Actions
+```
+
+Share actions by copying `.md` files to another user's `~/.vibpage/Actions/` directory.
+
 ## Project Structure
 
 ```
@@ -97,13 +106,12 @@ src/
 ├── ui.tsx             # Terminal UI (Ink/React)
 ├── tools/
 │   ├── browser-task.ts # Browser automation (OpenAI Computer Use + Playwright)
+│   ├── action.ts      # Reusable automation actions (CRUD)
 │   ├── file.ts        # Read/write files
 │   ├── web-fetch.ts   # Fetch web pages as Markdown
 │   ├── web-search.ts  # DuckDuckGo search
 │   ├── screenshot.ts  # Web page screenshots (Playwright)
-│   ├── shell.ts       # Shell command execution
-│   ├── init.ts        # Project initialization
-│   └── publish.ts     # Build + deploy to Cloudflare Pages
+│   └── shell.ts       # Shell command execution
 └── utils/
     └── html-to-md.ts  # HTML to Markdown conversion
 ```
@@ -114,8 +122,6 @@ src/
 - **AI**: [@mariozechner/pi-ai](https://github.com/badlogic/pi-mono) (unified multi-model API)
 - **Browser**: [Playwright](https://playwright.dev/) + [OpenAI Computer Use](https://platform.openai.com/docs/guides/tools-computer-use) (AI-driven automation)
 - **UI**: [Ink](https://github.com/vadimdemedes/ink) (React for terminal)
-- **Build**: [Astro](https://astro.build/) (static site generation)
-- **Deploy**: [Cloudflare Pages](https://pages.cloudflare.com/) via Wrangler
 
 ## License
 

@@ -17,26 +17,10 @@ export const LANGUAGE_LABELS: Record<Language, string> = {
 
 export interface ProjectConfig {
   language: Language;
-  author: string;
-  cloudflare: {
-    projectName: string;
-  };
-  template: {
-    source: string;
-    repo: string;
-  };
 }
 
 const DEFAULT_PROJECT_CONFIG: ProjectConfig = {
   language: "zh-CN",
-  author: "",
-  cloudflare: {
-    projectName: "",
-  },
-  template: {
-    source: "github",
-    repo: "",
-  },
 };
 
 const CONFIG_FILENAME = ".vibpage.json";
@@ -58,9 +42,6 @@ export function loadProjectConfig(): ProjectConfig {
   const parsed = JSON.parse(raw);
   return {
     language: parsed.language || DEFAULT_PROJECT_CONFIG.language,
-    author: parsed.author || DEFAULT_PROJECT_CONFIG.author,
-    cloudflare: { ...DEFAULT_PROJECT_CONFIG.cloudflare, ...parsed.cloudflare },
-    template: { ...DEFAULT_PROJECT_CONFIG.template, ...parsed.template },
   };
 }
 
