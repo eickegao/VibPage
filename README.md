@@ -2,6 +2,8 @@
 
 AI-powered content creation and publishing CLI. Write articles with AI assistance, then publish directly to Cloudflare Pages from your terminal.
 
+![VibPage Screenshot](docs/screenshot.png)
+
 ## Features
 
 - **AI Writing** - Ask the AI to write articles, blog posts, or any content in Markdown
