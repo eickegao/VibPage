@@ -2,6 +2,12 @@
 
 import { program } from "commander";
 import chalk from "chalk";
+import { readFileSync } from "fs";
+import { join, dirname } from "path";
+import { fileURLToPath } from "url";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const pkg = JSON.parse(readFileSync(join(__dirname, "..", "package.json"), "utf-8"));
 import React from "react";
 import { render } from "ink";
 import { loadConfig } from "./config.js";
@@ -129,7 +135,7 @@ function showWelcome(provider: string, model: string, language: Language) {
 program
   .name("vibpage")
   .description("AI-powered content creation CLI")
-  .version("0.1.0")
+  .version(pkg.version)
   .option("-m, --model <model>", "AI model to use")
   .option("-p, --provider <provider>", "AI provider (anthropic/openai/google)")
   .option("-o, --output <dir>", "Output directory")
