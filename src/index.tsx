@@ -124,7 +124,7 @@ function showWelcome(provider: string, model: string, language: Language) {
     console.log(gradientLine(line));
   }
   console.log("");
-  console.log(chalk.rgb(151, 220, 226)(`  ${t.subtitle}\n`));
+  console.log(chalk.rgb(151, 220, 226)(`  ${t.subtitle}`) + chalk.dim(`  v${pkg.version}\n`));
   t.tips.forEach((tip, i) => {
     console.log(chalk.white(`  ${i + 1}. ${tip}`));
   });
