@@ -3,6 +3,7 @@ import { getModel } from "@mariozechner/pi-ai";
 import chalk from "chalk";
 import type { VibPageConfig } from "./config.js";
 import { getApiKey } from "./config.js";
+import { type Language, LANGUAGE_LABELS } from "./project-config.js";
 import { readFileTool, writeFileTool } from "./tools/file.js";
 import { webFetchTool } from "./tools/web-fetch.js";
 import { webSearchTool } from "./tools/web-search.js";
@@ -11,7 +12,14 @@ import { shellExecuteTool } from "./tools/shell.js";
 import { initTool } from "./tools/init.js";
 import { publishTool } from "./tools/publish.js";
 
-const SYSTEM_PROMPT = `You are VibPage, an AI content creation assistant. You help users write articles, blog posts, and other content, and publish them to the web.
+export function buildSystemPrompt(language: Language, author?: string): string {
+  const langName = LANGUAGE_LABELS[language];
+  const authorSection = author
+    ? `\n\nAbout the author:\n${author}\n\nWhen writing content, match the author's voice, style, and perspective. Draw on their background and expertise where relevant.`
+    : "";
+  return `You are VibPage, an AI content creation assistant. You help users write articles, blog posts, and other content, and publish them to the web.
+
+You MUST respond in ${langName} (${language}). All your responses, explanations, and generated content should be in ${langName}.${authorSection}
 
 You have the following tools available:
 - read_file / write_file: Read and write local files
@@ -33,9 +41,10 @@ When the user says "发布", "publish", "/publish", or asks to publish/deploy:
 2. If Cloudflare config is missing, ask the user for their API Token, Account ID, and project name
 3. Provide the published URL to the user
 
-Always write in the language the user uses. Be concise and helpful.`;
+Be concise and helpful.`;
+}
 
-export function createAgent(config: VibPageConfig): Agent {
+export function createAgent(config: VibPageConfig, language: Language = "zh-CN", author?: string): Agent {
   const apiKey = getApiKey(config);
   if (!apiKey) {
     console.error(
@@ -60,7 +69,7 @@ export function createAgent(config: VibPageConfig): Agent {
 
   const agent = new Agent({
     initialState: {
-      systemPrompt: SYSTEM_PROMPT,
+      systemPrompt: buildSystemPrompt(language, author),
       model,
       tools,
     },

@@ -1,8 +1,15 @@
 import React, { useState, useCallback, useEffect, useRef } from "react";
-import { Box, Text, Static, useApp, useStdout } from "ink";
+import { Box, Text, Static, useApp, useStdout, useInput } from "ink";
 import TextInput from "ink-text-input";
 import Spinner from "ink-spinner";
 import { Agent } from "@mariozechner/pi-agent-core";
+import {
+  type Language,
+  LANGUAGE_LABELS,
+  loadProjectConfig,
+  saveProjectConfig,
+} from "./project-config.js";
+import { buildSystemPrompt } from "./agent.js";
 
 interface Message {
   id: number;
@@ -49,6 +56,11 @@ const SLASH_COMMANDS: SlashCommand[] = [
     prompt: "Please check the current project status: is it initialized? Are Astro and Wrangler installed? Is Cloudflare configured? Show me a summary.",
   },
   {
+    name: "/language",
+    description: "Set response language",
+    prompt: "",
+  },
+  {
     name: "/help",
     description: "Show available commands",
     prompt: "",
@@ -60,34 +72,50 @@ const SLASH_COMMANDS: SlashCommand[] = [
   },
 ];
 
+const LANGUAGE_OPTIONS: { code: Language; label: string }[] = [
+  { code: "zh-CN", label: "简体中文" },
+  { code: "zh-TW", label: "繁體中文" },
+  { code: "en", label: "English" },
+  { code: "fr", label: "Français" },
+  { code: "de", label: "Deutsch" },
+  { code: "es", label: "Español" },
+  { code: "pt", label: "Português" },
+  { code: "ko", label: "한국어" },
+];
+
+type UIMode = "normal" | "command-select" | "language-select";
+
 function MessageItem({ msg }: { msg: Message }) {
   switch (msg.role) {
     case "user":
       return (
         <Box flexDirection="column" marginTop={1}>
-          <Text color="#97DCE2" bold>
-            {"  You: "}{msg.text}
+          <Text>
+            <Text color="#26AAB9" bold>{"  ● "}</Text>
+            <Text>{msg.text}</Text>
           </Text>
         </Box>
       );
-    case "assistant":
+    case "assistant": {
+      const lines = msg.text.split("\n");
       return (
         <Box flexDirection="column" marginTop={1}>
-          {msg.text.split("\n").map((line, i) => (
+          {lines.map((line, i) => (
             <Text key={i}>
               {i === 0 ? (
-                <Text color="#41BAC7" bold>{"  VibPage: "}</Text>
+                <Text color="green" bold>{"  ● "}</Text>
               ) : (
-                <Text>{"          "}</Text>
+                <Text>{"     "}</Text>
               )}
               <Text>{line}</Text>
             </Text>
           ))}
         </Box>
       );
+    }
     case "tool":
       return (
-        <Text dimColor>{"          "}{msg.text}</Text>
+        <Text dimColor>{"  ⎿ "}{msg.text}</Text>
       );
     case "status":
       return (
@@ -120,13 +148,95 @@ export function App({ agent, config }: AppProps) {
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const termWidth = stdout?.columns || 80;
 
-  // Show slash command suggestions when input starts with /
-  const showSuggestions = input.startsWith("/") && !isLoading;
-  const filteredCommands = showSuggestions
-    ? SLASH_COMMANDS.filter((cmd) =>
-        cmd.name.startsWith(input.toLowerCase())
-      )
-    : [];
+  const [mode, setMode] = useState<UIMode>("normal");
+  const [selectedIndex, setSelectedIndex] = useState(0);
+
+  // Filtered commands for command-select mode
+  const filteredCommands = input.startsWith("/")
+    ? SLASH_COMMANDS.filter((cmd) => cmd.name.startsWith(input.toLowerCase()))
+    : SLASH_COMMANDS;
+
+  // Determine if we should show command selector
+  const showCommandSelect = mode === "command-select" && !isLoading;
+  const showLanguageSelect = mode === "language-select" && !isLoading;
+
+  // Reset selected index when filtered list changes
+  useEffect(() => {
+    setSelectedIndex(0);
+  }, [input]);
+
+  // Handle arrow keys and enter for selection modes
+  useInput((ch, key) => {
+    if (isLoading) return;
+
+    if (showCommandSelect) {
+      if (key.downArrow) {
+        setSelectedIndex((i) => Math.min(i + 1, filteredCommands.length - 1));
+        return;
+      }
+      if (key.upArrow) {
+        setSelectedIndex((i) => Math.max(i - 1, 0));
+        return;
+      }
+      if (key.escape) {
+        setMode("normal");
+        setInput("");
+        return;
+      }
+      if (key.return) {
+        const cmd = filteredCommands[selectedIndex];
+        if (cmd) {
+          executeCommand(cmd);
+        }
+        return;
+      }
+    }
+
+    if (showLanguageSelect) {
+      if (key.downArrow) {
+        setSelectedIndex((i) => Math.min(i + 1, LANGUAGE_OPTIONS.length - 1));
+        return;
+      }
+      if (key.upArrow) {
+        setSelectedIndex((i) => Math.max(i - 1, 0));
+        return;
+      }
+      if (key.escape) {
+        setMode("normal");
+        return;
+      }
+      if (key.return) {
+        const option = LANGUAGE_OPTIONS[selectedIndex];
+        if (option) {
+          const projectConfig = loadProjectConfig();
+          projectConfig.language = option.code;
+          saveProjectConfig(projectConfig);
+          agent.setSystemPrompt(buildSystemPrompt(option.code));
+          setMode("normal");
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: nextId(),
+              role: "assistant",
+              text: `Language set to ${option.label}.`,
+            },
+          ]);
+        }
+        return;
+      }
+    }
+  });
+
+  // Watch input for slash trigger
+  const handleInputChange = useCallback((value: string) => {
+    setInput(value);
+    if (value === "/" && mode === "normal") {
+      setMode("command-select");
+      setSelectedIndex(0);
+    } else if (!value.startsWith("/") && mode === "command-select") {
+      setMode("normal");
+    }
+  }, [mode]);
 
   useEffect(() => {
     if (isLoading) {
@@ -229,39 +339,74 @@ export function App({ agent, config }: AppProps) {
     [agent]
   );
 
-  const handleSubmit = useCallback(
-    async (value: string) => {
-      const trimmed = value.trim();
-      if (!trimmed) return;
+  const executeCommand = useCallback(
+    async (cmd: SlashCommand) => {
       setInput("");
+      setMode("normal");
 
-      // Handle /exit
-      if (trimmed === "/exit" || trimmed === "exit" || trimmed === "quit") {
+      // /exit
+      if (cmd.name === "/exit") {
         exit();
         return;
       }
 
-      // Handle /help
-      if (trimmed === "/help") {
+      // /language — switch to language select
+      if (cmd.name === "/language") {
+        const currentLang = loadProjectConfig().language;
+        const currentIdx = LANGUAGE_OPTIONS.findIndex((o) => o.code === currentLang);
+        setMessages((prev) => [
+          ...prev,
+          { id: nextId(), role: "user", text: cmd.name },
+        ]);
+        setSelectedIndex(currentIdx >= 0 ? currentIdx : 0);
+        setMode("language-select");
+        return;
+      }
+
+      // /help
+      if (cmd.name === "/help") {
         const helpText = SLASH_COMMANDS.map(
-          (cmd) => `${cmd.name}  ${cmd.description}`
+          (c) => `${c.name}  ${c.description}`
         ).join("\n");
         setMessages((prev) => [
           ...prev,
-          { id: nextId(), role: "user", text: trimmed },
+          { id: nextId(), role: "user", text: cmd.name },
           { id: nextId(), role: "assistant", text: helpText },
         ]);
         return;
       }
 
-      // Handle slash commands
-      const cmd = SLASH_COMMANDS.find((c) => c.name === trimmed);
-      if (cmd && cmd.prompt) {
+      // Commands with prompts
+      if (cmd.prompt) {
         setMessages((prev) => [
           ...prev,
-          { id: nextId(), role: "user", text: trimmed },
+          { id: nextId(), role: "user", text: cmd.name },
         ]);
         await sendPrompt(cmd.prompt);
+      }
+    },
+    [exit, sendPrompt, agent]
+  );
+
+  const handleSubmit = useCallback(
+    async (value: string) => {
+      const trimmed = value.trim();
+      if (!trimmed) return;
+
+      // If in command-select mode, enter is handled by useInput
+      if (mode === "command-select" || mode === "language-select") return;
+
+      setInput("");
+
+      if (trimmed === "exit" || trimmed === "quit") {
+        exit();
+        return;
+      }
+
+      // Check if it's a slash command typed manually
+      const cmd = SLASH_COMMANDS.find((c) => c.name === trimmed);
+      if (cmd) {
+        await executeCommand(cmd);
         return;
       }
 
@@ -272,7 +417,7 @@ export function App({ agent, config }: AppProps) {
       ]);
       await sendPrompt(trimmed);
     },
-    [agent, exit, sendPrompt]
+    [agent, exit, sendPrompt, executeCommand, mode]
   );
 
   return (
@@ -290,9 +435,9 @@ export function App({ agent, config }: AppProps) {
           {streamingText.split("\n").map((line, i) => (
             <Text key={i}>
               {i === 0 ? (
-                <Text color="#41BAC7" bold>{"  VibPage: "}</Text>
+                <Text color="green" bold>{"  ● "}</Text>
               ) : (
-                <Text>{"          "}</Text>
+                <Text>{"     "}</Text>
               )}
               <Text>{line}</Text>
             </Text>
@@ -317,32 +462,69 @@ export function App({ agent, config }: AppProps) {
         </Box>
       )}
 
-      {/* Input area with top and bottom borders */}
+      {/* Input area */}
       <Separator width={termWidth} />
       <Box>
         <Text color={isLoading ? "gray" : "#97DCE2"} bold>
           {"  ❯ "}
         </Text>
-        <TextInput
-          value={input}
-          onChange={setInput}
-          onSubmit={handleSubmit}
-          placeholder={
-            isLoading ? "waiting..." : "Type / for commands, or ask anything..."
-          }
-          focus={!isLoading}
-        />
+        {mode === "language-select" ? (
+          <Text dimColor>Select language with ↑↓, Enter to confirm, Esc to cancel</Text>
+        ) : (
+          <TextInput
+            value={input}
+            onChange={handleInputChange}
+            onSubmit={handleSubmit}
+            placeholder={
+              isLoading ? "waiting..." : "Type / for commands, or ask anything..."
+            }
+            focus={!isLoading && !showLanguageSelect}
+          />
+        )}
       </Box>
       <Separator width={termWidth} />
 
-      {/* Slash command suggestions below input */}
-      {showSuggestions && filteredCommands.length > 0 && (
+      {/* Command selector */}
+      {showCommandSelect && filteredCommands.length > 0 && (
         <Box flexDirection="column">
-          {filteredCommands.map((cmd) => (
+          {filteredCommands.map((cmd, i) => (
             <Box key={cmd.name}>
               <Text>{"  "}</Text>
-              <Text color="#41BAC7" bold>{cmd.name}</Text>
-              <Text dimColor>{"  "}{cmd.description}</Text>
+              {i === selectedIndex ? (
+                <>
+                  <Text color="#26AAB9" bold>{"❯ "}</Text>
+                  <Text color="#26AAB9" bold>{cmd.name}</Text>
+                  <Text color="#97DCE2">{"  "}{cmd.description}</Text>
+                </>
+              ) : (
+                <>
+                  <Text>{"  "}</Text>
+                  <Text color="white">{cmd.name}</Text>
+                  <Text color="gray">{"  "}{cmd.description}</Text>
+                </>
+              )}
+            </Box>
+          ))}
+        </Box>
+      )}
+
+      {/* Language selector */}
+      {showLanguageSelect && (
+        <Box flexDirection="column">
+          {LANGUAGE_OPTIONS.map((opt, i) => (
+            <Box key={opt.code}>
+              <Text>{"  "}</Text>
+              {i === selectedIndex ? (
+                <>
+                  <Text color="#26AAB9" bold>{"❯ "}</Text>
+                  <Text color="#26AAB9" bold>{opt.label}</Text>
+                </>
+              ) : (
+                <>
+                  <Text>{"  "}</Text>
+                  <Text color="white">{opt.label}</Text>
+                </>
+              )}
             </Box>
           ))}
         </Box>
