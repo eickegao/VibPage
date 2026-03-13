@@ -10,7 +10,7 @@ import {
   saveProjectConfig,
 } from "./project-config.js";
 import { buildSystemPrompt } from "./agent.js";
-import { closeBrowser, openBrowser } from "./tools/push-social.js";
+import { closeBrowser, openBrowser } from "./tools/browser-task.js";
 
 interface Message {
   id: number;
@@ -57,19 +57,34 @@ const SLASH_COMMANDS: SlashCommand[] = [
     prompt: "Please publish my site to Cloudflare Pages using the publish tool.",
   },
   {
-    name: "/push",
+    name: "/action",
     description: {
-      "zh-CN": "推送内容到社交媒体",
-      "zh-TW": "推送內容到社群媒體",
-      en: "Push content to social media",
-      fr: "Publier du contenu sur les réseaux sociaux",
-      de: "Inhalte in sozialen Medien veröffentlichen",
-      es: "Publicar contenido en redes sociales",
-      pt: "Publicar conteúdo nas redes sociais",
-      ko: "소셜 미디어에 콘텐츠 게시",
-      ja: "ソーシャルメディアにコンテンツを投稿",
+      "zh-CN": "管理自动化动作（创建/列表/运行）",
+      "zh-TW": "管理自動化動作（建立/列表/執行）",
+      en: "Manage actions (create/list/run)",
+      fr: "Gérer les actions (créer/lister/exécuter)",
+      de: "Aktionen verwalten (erstellen/auflisten/ausführen)",
+      es: "Gestionar acciones (crear/listar/ejecutar)",
+      pt: "Gerenciar ações (criar/listar/executar)",
+      ko: "액션 관리 (생성/목록/실행)",
+      ja: "アクション管理（作成/一覧/実行）",
     },
-    prompt: "Please help me push content to social media. Ask me which platform (currently X/Twitter and LinkedIn are supported) and what content I want to post, then use the push_social tool.",
+    prompt: "Please help me manage my actions. First, list all saved actions using action_list. Then ask me if I want to: 1) Create a new action, 2) Run an existing action, or 3) Delete an action.",
+  },
+  {
+    name: "/run",
+    description: {
+      "zh-CN": "执行浏览器自动化任务",
+      "zh-TW": "執行瀏覽器自動化任務",
+      en: "Run a browser automation task",
+      fr: "Exécuter une tâche d'automatisation navigateur",
+      de: "Browser-Automatisierungsaufgabe ausführen",
+      es: "Ejecutar tarea de automatización del navegador",
+      pt: "Executar tarefa de automação do navegador",
+      ko: "브라우저 자동화 작업 실행",
+      ja: "ブラウザ自動化タスクを実行",
+    },
+    prompt: "Please help me run a browser automation task. Ask me which website URL I want to go to and what task I want to perform, then use the browser_task tool.",
   },
   {
     name: "/init",

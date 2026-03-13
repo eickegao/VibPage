@@ -1,14 +1,16 @@
 # VibPage
 
-AI-powered content creation and publishing CLI. Write articles with AI assistance, then publish directly to Cloudflare Pages from your terminal.
+AI-powered browser automation (RPA) CLI. Describe tasks in natural language, and AI operates the browser for you — fill forms, post to social media, download reports, and more.
 
 ![VibPage Screenshot](docs/screenshot.png)
 
 ## Features
 
-- **AI Writing** - Ask the AI to write articles, blog posts, or any content in Markdown
-- **Web Research** - Search the web, fetch pages, and take screenshots for research
-- **One-Command Publish** - Build with Astro and deploy to Cloudflare Pages via `/publish`
+- **Browser Automation** - AI sees the screen and operates the browser like a human, powered by OpenAI Computer Use
+- **Any Website** - Works on any site: X, LinkedIn, Gmail, Notion, internal tools, etc.
+- **Persistent Sessions** - Login once, sessions are saved for future runs
+- **Content Creation** - Write articles and blog posts with AI assistance
+- **Web Publishing** - Build with Astro and deploy to Cloudflare Pages via `/publish`
 - **Multi-Language** - Supports 9 languages: 简体中文, 繁體中文, English, Français, Deutsch, Español, Português, 한국어, 日本語
 - **Slash Commands** - Arrow-key navigable command menu with `/` prefix
 - **Multi-Model** - Supports Anthropic, OpenAI, and Google AI models
@@ -39,6 +41,8 @@ Supported providers: `anthropic`, `openai`, `google`
 
 You can also use environment variables: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_API_KEY`
 
+> **Note:** Browser automation requires an OpenAI API key with access to `gpt-5.4` (Computer Use).
+
 ## Usage
 
 ```bash
@@ -46,7 +50,16 @@ You can also use environment variables: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `
 vibpage
 
 # With options
-vibpage -p anthropic -m claude-sonnet-4-20250514
+vibpage -p openai -m gpt-4o
+```
+
+### Examples
+
+```
+> 帮我登录 X，发一条推文："Hello from VibPage!"
+> Go to LinkedIn and post an article about AI automation
+> 打开 Notion，创建一个新页面
+> Download the monthly report from our dashboard
 ```
 
 ### Slash Commands
@@ -55,21 +68,23 @@ Type `/` to see available commands:
 
 | Command | Description |
 |---------|-------------|
+| `/run` | Run a browser automation task |
 | `/publish` | Build and deploy to Cloudflare Pages |
 | `/init` | Initialize project |
 | `/status` | Show project status |
 | `/language` | Set response language |
+| `/open-browser` | Open browser |
+| `/close-browser` | Close browser |
 | `/help` | Show all commands |
 | `/exit` | Quit |
 
-### Publishing
+### How It Works
 
-On first publish, VibPage will:
-1. Run `wrangler login` to open browser for Cloudflare OAuth
-2. Create the Cloudflare Pages project if needed
-3. Build with Astro and deploy
-
-No manual API tokens required.
+1. You describe a task in natural language
+2. AI opens a visible browser and navigates to the target website
+3. AI takes screenshots, understands the page, and performs actions (click, type, scroll)
+4. The loop continues until the task is complete
+5. Browser sessions are preserved in `~/.vibpage/browser-data/`
 
 ## Project Structure
 
@@ -81,6 +96,7 @@ src/
 ├── project-config.ts  # Project config (.vibpage.json)
 ├── ui.tsx             # Terminal UI (Ink/React)
 ├── tools/
+│   ├── browser-task.ts # Browser automation (OpenAI Computer Use + Playwright)
 │   ├── file.ts        # Read/write files
 │   ├── web-fetch.ts   # Fetch web pages as Markdown
 │   ├── web-search.ts  # DuckDuckGo search
@@ -96,10 +112,10 @@ src/
 
 - **Runtime**: Node.js + TypeScript
 - **AI**: [@mariozechner/pi-ai](https://github.com/badlogic/pi-mono) (unified multi-model API)
+- **Browser**: [Playwright](https://playwright.dev/) + [OpenAI Computer Use](https://platform.openai.com/docs/guides/tools-computer-use) (AI-driven automation)
 - **UI**: [Ink](https://github.com/vadimdemedes/ink) (React for terminal)
 - **Build**: [Astro](https://astro.build/) (static site generation)
 - **Deploy**: [Cloudflare Pages](https://pages.cloudflare.com/) via Wrangler
-- **Browser**: Playwright (screenshots)
 
 ## License
 

@@ -74,48 +74,48 @@ const BANNER_LINES = [
 
 const WELCOME_TEXTS: Record<Language, { subtitle: string; tips: string[]; quit: string }> = {
   "zh-CN": {
-    subtitle: "AI 驱动的内容创作",
-    tips: ["让我帮你写文章、博客或任何内容。", "我可以搜索网页并获取资料。", "我可以对网页截图。"],
+    subtitle: "AI 驱动的浏览器自动化",
+    tips: ["用自然语言描述任务，AI 自动操作浏览器。", "支持任意网站：填表、发帖、下载报表等。", "登录状态自动保存，无需重复登录。"],
     quit: '输入 "exit" 退出。',
   },
   "zh-TW": {
-    subtitle: "AI 驅動的內容創作",
-    tips: ["讓我幫你寫文章、部落格或任何內容。", "我可以搜尋網頁並取得資料。", "我可以對網頁截圖。"],
+    subtitle: "AI 驅動的瀏覽器自動化",
+    tips: ["用自然語言描述任務，AI 自動操作瀏覽器。", "支援任意網站：填表、發帖、下載報表等。", "登入狀態自動保存，無需重複登入。"],
     quit: '輸入 "exit" 退出。',
   },
   en: {
-    subtitle: "AI-powered content creation",
-    tips: ["Ask me to write articles, blog posts, or any content.", "I can search the web and fetch pages for research.", "I can take screenshots of web pages."],
+    subtitle: "AI-powered browser automation",
+    tips: ["Describe tasks in natural language, AI operates the browser.", "Works on any website: fill forms, post, download reports, etc.", "Login sessions are saved automatically."],
     quit: 'Type "exit" to quit.',
   },
   fr: {
-    subtitle: "Création de contenu par IA",
-    tips: ["Demandez-moi d'écrire des articles ou tout autre contenu.", "Je peux rechercher sur le web.", "Je peux capturer des pages web."],
+    subtitle: "Automatisation navigateur par IA",
+    tips: ["Décrivez vos tâches en langage naturel, l'IA pilote le navigateur.", "Fonctionne sur tout site : formulaires, publications, rapports.", "Les sessions de connexion sont sauvegardées."],
     quit: 'Tapez "exit" pour quitter.',
   },
   de: {
-    subtitle: "KI-gestützte Inhaltserstellung",
-    tips: ["Lass mich Artikel, Blogbeiträge oder andere Inhalte schreiben.", "Ich kann im Web suchen und Seiten abrufen.", "Ich kann Screenshots von Webseiten machen."],
+    subtitle: "KI-gestützte Browser-Automatisierung",
+    tips: ["Beschreiben Sie Aufgaben in natürlicher Sprache, KI steuert den Browser.", "Funktioniert auf jeder Website: Formulare, Posts, Berichte.", "Login-Sitzungen werden automatisch gespeichert."],
     quit: '"exit" eingeben zum Beenden.',
   },
   es: {
-    subtitle: "Creación de contenido con IA",
-    tips: ["Pídeme escribir artículos, blogs o cualquier contenido.", "Puedo buscar en la web.", "Puedo tomar capturas de páginas web."],
+    subtitle: "Automatización de navegador con IA",
+    tips: ["Describe tareas en lenguaje natural, la IA opera el navegador.", "Funciona en cualquier sitio: formularios, publicaciones, informes.", "Las sesiones se guardan automáticamente."],
     quit: 'Escribe "exit" para salir.',
   },
   pt: {
-    subtitle: "Criação de conteúdo com IA",
-    tips: ["Peça-me para escrever artigos, blogs ou qualquer conteúdo.", "Posso pesquisar na web.", "Posso fazer capturas de páginas web."],
+    subtitle: "Automação de navegador com IA",
+    tips: ["Descreva tarefas em linguagem natural, a IA opera o navegador.", "Funciona em qualquer site: formulários, postagens, relatórios.", "As sessões são salvas automaticamente."],
     quit: 'Digite "exit" para sair.',
   },
   ko: {
-    subtitle: "AI 기반 콘텐츠 제작",
-    tips: ["기사, 블로그 또는 모든 콘텐츠를 작성해 드립니다.", "웹을 검색하고 자료를 가져올 수 있습니다.", "웹 페이지의 스크린샷을 찍을 수 있습니다."],
+    subtitle: "AI 기반 브라우저 자동화",
+    tips: ["자연어로 작업을 설명하면 AI가 브라우저를 조작합니다.", "모든 웹사이트에서 작동: 양식 작성, 게시, 보고서 다운로드 등.", "로그인 세션이 자동으로 저장됩니다."],
     quit: '"exit"를 입력하면 종료됩니다.',
   },
   ja: {
-    subtitle: "AI搭載コンテンツ作成",
-    tips: ["記事、ブログ、あらゆるコンテンツの作成をお手伝いします。", "ウェブを検索して資料を取得できます。", "ウェブページのスクリーンショットを撮れます。"],
+    subtitle: "AI搭載ブラウザ自動化",
+    tips: ["自然言語でタスクを記述すると、AIがブラウザを操作します。", "あらゆるサイトに対応：フォーム入力、投稿、レポートDLなど。", "ログイン状態は自動的に保存されます。"],
     quit: '"exit" と入力して終了します。',
   },
 };
@@ -139,7 +139,7 @@ function showWelcome(provider: string, model: string, language: Language) {
 
 program
   .name("vibpage")
-  .description("AI-powered content creation CLI")
+  .description("AI-powered browser automation CLI (RPA)")
   .version(pkg.version)
   .option("-m, --model <model>", "AI model to use")
   .option("-p, --provider <provider>", "AI provider (anthropic/openai/google)")

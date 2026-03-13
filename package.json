@@ -1,7 +1,7 @@
 {
   "name": "vibpage",
   "version": "0.1.20",
-  "description": "AI-powered content creation CLI",
+  "description": "AI-powered browser automation CLI (RPA)",
   "type": "module",
   "bin": {
     "vibpage": "./dist/index.js"
@@ -13,9 +13,9 @@
   },
   "keywords": [
     "ai",
-    "markdown",
-    "cli",
-    "content"
+    "rpa",
+    "browser-automation",
+    "cli"
   ],
   "license": "Apache-2.0",
   "dependencies": {

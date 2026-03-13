@@ -5,7 +5,7 @@ import { join } from "path";
 import { existsSync, readFileSync } from "fs";
 
 const VIEWPORT = { width: 1280, height: 800 };
-const MAX_TURNS = 30;
+const MAX_TURNS = 50;
 
 // Track open browser so it can be closed via closeBrowser()
 let openContext: any = null;
@@ -31,7 +31,6 @@ export async function openBrowser(url?: string): Promise<boolean> {
   }
 
   if (openContext) {
-    // Already open — just navigate to url if provided
     if (url) {
       const page = openContext.pages()[0] || (await openContext.newPage());
       await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
@@ -73,9 +72,7 @@ interface ComputerCallOutput {
 }
 
 function getOpenAIKey(): string {
-  // Try env var first
   if (process.env.OPENAI_API_KEY) return process.env.OPENAI_API_KEY;
-  // Try config file
   const configPath = join(homedir(), ".vibpage", "config.json");
   if (existsSync(configPath)) {
     const config = JSON.parse(readFileSync(configPath, "utf-8"));
@@ -142,10 +139,8 @@ async function executeActions(page: any, actions: ComputerAction[]): Promise<voi
         await page.mouse.wheel(action.scrollX || 0, action.scrollY || 0);
         break;
       case "drag":
-        // start at x,y, drag to target
         await page.mouse.move(action.x!, action.y!);
         await page.mouse.down();
-        // If drag has target coords, use them
         const dragAction = action as any;
         if (dragAction.toX !== undefined && dragAction.toY !== undefined) {
           await page.mouse.move(dragAction.toX, dragAction.toY);
@@ -159,10 +154,8 @@ async function executeActions(page: any, actions: ComputerAction[]): Promise<voi
         await new Promise((r) => setTimeout(r, 2000));
         break;
       case "screenshot":
-        // No-op, we always take screenshot after actions
         break;
     }
-    // Small delay between actions
     await new Promise((r) => setTimeout(r, 200));
   }
 }
@@ -172,44 +165,29 @@ async function takeScreenshot(page: any): Promise<string> {
   return buffer.toString("base64");
 }
 
-const PLATFORM_URLS: Record<string, string> = {
-  x: "https://x.com",
-  twitter: "https://x.com",
-  linkedin: "https://www.linkedin.com",
-};
-
-const pushSocialParams = Type.Object({
-  platform: Type.String({
-    description: "Social platform to post to (e.g. 'x')",
+const browserTaskParams = Type.Object({
+  url: Type.String({
+    description: "Target URL to open in the browser",
   }),
-  content: Type.String({
-    description: "The content/text to post",
+  task: Type.String({
+    description: "Natural language description of what to do on this page",
   }),
 });
 
-export const pushSocialTool: AgentTool<typeof pushSocialParams> = {
-  name: "push_social",
-  label: "Push to Social",
+export const browserTaskTool: AgentTool<typeof browserTaskParams> = {
+  name: "browser_task",
+  label: "Browser Task",
   description:
-    "Post content to social media platforms using browser automation. Supports: X (Twitter), LinkedIn. The browser will open visibly so you can monitor the process.",
-  parameters: pushSocialParams,
+    "Execute any task in a browser using AI vision and automation. Opens a visible browser, navigates to the URL, and uses AI to understand the page and perform actions (click, type, scroll, etc.) to complete the task. The browser preserves login sessions across runs. Examples: fill forms, post to social media, download reports, interact with any website.",
+  parameters: browserTaskParams,
   execute: async (_toolCallId, params) => {
     const apiKey = getOpenAIKey();
     if (!apiKey) {
       throw new Error(
-        "OpenAI API key required for social media push. Set OPENAI_API_KEY or configure in ~/.vibpage/config.json with provider: openai"
+        "OpenAI API key required for browser tasks. Set OPENAI_API_KEY or configure in ~/.vibpage/config.json with provider: openai"
       );
     }
 
-    const platformKey = params.platform.toLowerCase();
-    const url = PLATFORM_URLS[platformKey];
-    if (!url) {
-      throw new Error(
-        `Unsupported platform: ${params.platform}. Supported: ${Object.keys(PLATFORM_URLS).join(", ")}`
-      );
-    }
-
-    // Use persistent browser context to preserve login sessions
     const userDataDir = join(homedir(), ".vibpage", "browser-data");
 
     let chromium;
@@ -238,49 +216,38 @@ export const pushSocialTool: AgentTool<typeof pushSocialParams> = {
 
     try {
       const page = context.pages()[0] || (await context.newPage());
-      await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
-      // Wait for page to settle
+      await page.goto(params.url, { waitUntil: "domcontentloaded", timeout: 30000 });
       await new Promise((r) => setTimeout(r, 3000));
 
-      const taskPrompt = `You are controlling a browser to post content on ${params.platform}.
+      const taskPrompt = `You are controlling a browser to complete a task.
 
-The content to post is:
-"""
-${params.content}
-"""
+URL: ${params.url}
+Task: ${params.task}
 
-Steps:
-1. First take a screenshot to see the current state
-2. If not logged in, tell me and KEEP taking screenshots every few seconds to wait for the user to log in manually. Do NOT stop — keep checking until you see the logged-in home feed.
-3. Once logged in, find the compose/new post area
-4. Type the content
-5. Click the post/publish button
-6. Take a final screenshot to confirm the post was published
+Instructions:
+1. First take a screenshot to see the current state of the page
+2. If the site requires login and you're not logged in, tell me and KEEP taking screenshots to wait for the user to log in manually. Do NOT stop.
+3. Once ready, perform the necessary actions (click, type, scroll, etc.) to complete the task
+4. Take a final screenshot to confirm the task is done
+5. Report what you accomplished
 
-IMPORTANT: Do NOT stop early. Always keep going until the post is confirmed published. If waiting for login, keep taking screenshots to monitor.
+IMPORTANT: Do NOT stop early. Keep going until the task is fully completed. If waiting for user action, keep monitoring with screenshots.
 
 Start by taking a screenshot to see the current page state.`;
 
-      // Initial call
       let response = await callComputerUse(apiKey, taskPrompt);
       let turns = 0;
-      logs.push(`Started push to ${params.platform}`);
+      logs.push(`Started: ${params.task}`);
+      logs.push(`URL: ${params.url}`);
 
       while (turns < MAX_TURNS) {
         turns++;
 
-        // Find computer_call in output
         const computerCall = response.output?.find(
           (o: any) => o.type === "computer_call"
         ) as ComputerCallOutput | undefined;
 
-        // Check if model produced text (completion message)
-        const textOutput = response.output?.find(
-          (o: any) => o.type === "message" || (o.type === "text" && o.text)
-        );
-
         if (!computerCall) {
-          // Extract any text the model returned
           let aiText = "";
           for (const o of response.output || []) {
             if (o.type === "text" && (o as any).text) {
@@ -293,20 +260,21 @@ Start by taking a screenshot to see the current page state.`;
           }
           if (aiText) logs.push(`AI: ${aiText}`);
 
-          // Check if it seems like a completion or just a status update
           const lowerText = aiText.toLowerCase();
-          const isDone = lowerText.includes("posted") ||
-            lowerText.includes("published") ||
+          const isDone = lowerText.includes("completed") ||
             lowerText.includes("successfully") ||
             lowerText.includes("complete") ||
-            lowerText.includes("done");
+            lowerText.includes("done") ||
+            lowerText.includes("finished") ||
+            lowerText.includes("posted") ||
+            lowerText.includes("published") ||
+            lowerText.includes("submitted");
 
           if (isDone) {
-            logs.push("Post completed successfully.");
+            logs.push("Task completed.");
             break;
           }
 
-          // Not done yet — send a follow-up to keep the loop going
           logs.push("Continuing...");
           await new Promise((r) => setTimeout(r, 3000));
           const screenshot = await takeScreenshot(page);
@@ -328,7 +296,6 @@ Start by taking a screenshot to see the current page state.`;
           continue;
         }
 
-        // Execute the actions
         const actionDescs = computerCall.actions.map((a) => {
           if (a.type === "click") return `click(${a.x},${a.y})`;
           if (a.type === "type") return `type("${a.text?.slice(0, 30)}...")`;
@@ -339,13 +306,9 @@ Start by taking a screenshot to see the current page state.`;
         logs.push(`Turn ${turns}: ${actionDescs.join(", ")}`);
 
         await executeActions(page, computerCall.actions);
-
-        // Wait for page to update after actions
         await new Promise((r) => setTimeout(r, 1500));
 
-        // Take screenshot and send back
         const screenshot = await takeScreenshot(page);
-
         response = await callComputerUse(
           apiKey,
           [
@@ -368,12 +331,7 @@ Start by taking a screenshot to see the current page state.`;
       }
 
       return {
-        content: [
-          {
-            type: "text",
-            text: logs.join("\n"),
-          },
-        ],
+        content: [{ type: "text", text: logs.join("\n") }],
         details: {},
       };
     } catch (err) {
@@ -383,6 +341,5 @@ Start by taking a screenshot to see the current page state.`;
         details: {},
       };
     }
-    // Browser stays open — user can close it manually or via /close-browser
   },
 };
