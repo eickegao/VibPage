@@ -9,7 +9,7 @@ AI-powered content creation and publishing CLI. Write articles with AI assistanc
 - **AI Writing** - Ask the AI to write articles, blog posts, or any content in Markdown
 - **Web Research** - Search the web, fetch pages, and take screenshots for research
 - **One-Command Publish** - Build with Astro and deploy to Cloudflare Pages via `/publish`
-- **Multi-Language** - Supports 8 languages: 简体中文, 繁體中文, English, Français, Deutsch, Español, Português, 한국어
+- **Multi-Language** - Supports 9 languages: 简体中文, 繁體中文, English, Français, Deutsch, Español, Português, 한국어, 日本語
 - **Slash Commands** - Arrow-key navigable command menu with `/` prefix
 - **Multi-Model** - Supports Anthropic, OpenAI, and Google AI models
 
@@ -103,4 +103,4 @@ src/
 
 ## License
 
-GPL-3.0 (GNU General Public License v3.0) - see [LICENSE](LICENSE) for details.
+Apache License 2.0 - see [LICENSE](LICENSE) for details.
