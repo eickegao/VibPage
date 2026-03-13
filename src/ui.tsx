@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect, useRef } from "react";
-import { Box, Text, Static, useApp } from "ink";
+import { Box, Text, Static, useApp, useStdout } from "ink";
 import TextInput from "ink-text-input";
 import Spinner from "ink-spinner";
 import { Agent } from "@mariozechner/pi-agent-core";
@@ -26,26 +26,59 @@ const TOOL_ICONS = {
   error: "✗",
 } as const;
 
+interface SlashCommand {
+  name: string;
+  description: string;
+  prompt: string;
+}
+
+const SLASH_COMMANDS: SlashCommand[] = [
+  {
+    name: "/publish",
+    description: "Build and deploy site to Cloudflare Pages",
+    prompt: "Please publish my site to Cloudflare Pages using the publish tool.",
+  },
+  {
+    name: "/init",
+    description: "Initialize VibPage project",
+    prompt: "Please initialize this VibPage project using the init tool.",
+  },
+  {
+    name: "/status",
+    description: "Show project status",
+    prompt: "Please check the current project status: is it initialized? Are Astro and Wrangler installed? Is Cloudflare configured? Show me a summary.",
+  },
+  {
+    name: "/help",
+    description: "Show available commands",
+    prompt: "",
+  },
+  {
+    name: "/exit",
+    description: "Quit VibPage",
+    prompt: "",
+  },
+];
+
 function MessageItem({ msg }: { msg: Message }) {
   switch (msg.role) {
     case "user":
       return (
-        <Box flexDirection="column">
-          <Text>{""}</Text>
-          <Text color="green" bold>
-            {"  ❯ "}{msg.text}
+        <Box flexDirection="column" marginTop={1}>
+          <Text color="#97DCE2" bold>
+            {"  You: "}{msg.text}
           </Text>
         </Box>
       );
     case "assistant":
       return (
-        <Box flexDirection="column">
+        <Box flexDirection="column" marginTop={1}>
           {msg.text.split("\n").map((line, i) => (
             <Text key={i}>
               {i === 0 ? (
-                <Text color="cyan" bold>{"  ✦ "}</Text>
+                <Text color="#41BAC7" bold>{"  VibPage: "}</Text>
               ) : (
-                <Text>{"    "}</Text>
+                <Text>{"          "}</Text>
               )}
               <Text>{line}</Text>
             </Text>
@@ -54,7 +87,7 @@ function MessageItem({ msg }: { msg: Message }) {
       );
     case "tool":
       return (
-        <Text dimColor>{"    "}{msg.text}</Text>
+        <Text dimColor>{"          "}{msg.text}</Text>
       );
     case "status":
       return (
@@ -65,8 +98,18 @@ function MessageItem({ msg }: { msg: Message }) {
   }
 }
 
+function Separator({ width }: { width: number }) {
+  const line = "─".repeat(Math.max(width - 2, 20));
+  return (
+    <Box>
+      <Text dimColor>{" "}{line}</Text>
+    </Box>
+  );
+}
+
 export function App({ agent, config }: AppProps) {
   const { exit } = useApp();
+  const { stdout } = useStdout();
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -75,6 +118,15 @@ export function App({ agent, config }: AppProps) {
   const currentTextRef = useRef("");
   const [elapsedSec, setElapsedSec] = useState(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const termWidth = stdout?.columns || 80;
+
+  // Show slash command suggestions when input starts with /
+  const showSuggestions = input.startsWith("/") && !isLoading;
+  const filteredCommands = showSuggestions
+    ? SLASH_COMMANDS.filter((cmd) =>
+        cmd.name.startsWith(input.toLowerCase())
+      )
+    : [];
 
   useEffect(() => {
     if (isLoading) {
@@ -160,25 +212,11 @@ export function App({ agent, config }: AppProps) {
     return unsubscribe;
   }, [agent]);
 
-  const handleSubmit = useCallback(
-    async (value: string) => {
-      const trimmed = value.trim();
-      if (!trimmed) return;
-
-      if (trimmed === "exit" || trimmed === "quit") {
-        exit();
-        return;
-      }
-
-      setInput("");
-      setMessages((prev) => [
-        ...prev,
-        { id: nextId(), role: "user", text: trimmed },
-      ]);
+  const sendPrompt = useCallback(
+    async (text: string) => {
       setIsLoading(true);
-
       try {
-        await agent.prompt(trimmed);
+        await agent.prompt(text);
         await agent.waitForIdle();
       } catch (err: any) {
         setMessages((prev) => [
@@ -186,32 +224,75 @@ export function App({ agent, config }: AppProps) {
           { id: nextId(), role: "status", text: err.message },
         ]);
       }
-
       setIsLoading(false);
     },
-    [agent, exit]
+    [agent]
+  );
+
+  const handleSubmit = useCallback(
+    async (value: string) => {
+      const trimmed = value.trim();
+      if (!trimmed) return;
+      setInput("");
+
+      // Handle /exit
+      if (trimmed === "/exit" || trimmed === "exit" || trimmed === "quit") {
+        exit();
+        return;
+      }
+
+      // Handle /help
+      if (trimmed === "/help") {
+        const helpText = SLASH_COMMANDS.map(
+          (cmd) => `${cmd.name}  ${cmd.description}`
+        ).join("\n");
+        setMessages((prev) => [
+          ...prev,
+          { id: nextId(), role: "user", text: trimmed },
+          { id: nextId(), role: "assistant", text: helpText },
+        ]);
+        return;
+      }
+
+      // Handle slash commands
+      const cmd = SLASH_COMMANDS.find((c) => c.name === trimmed);
+      if (cmd && cmd.prompt) {
+        setMessages((prev) => [
+          ...prev,
+          { id: nextId(), role: "user", text: trimmed },
+        ]);
+        await sendPrompt(cmd.prompt);
+        return;
+      }
+
+      // Regular message
+      setMessages((prev) => [
+        ...prev,
+        { id: nextId(), role: "user", text: trimmed },
+      ]);
+      await sendPrompt(trimmed);
+    },
+    [agent, exit, sendPrompt]
   );
 
   return (
     <Box flexDirection="column">
-      {/* All completed messages - pinned, never re-render */}
+      {/* Message history */}
       <Static items={messages}>
         {(msg) => (
           <MessageItem key={msg.id} msg={msg} />
         )}
       </Static>
 
-      {/* Live area: streaming + status + input */}
-
       {/* Streaming text */}
       {streamingText && (
-        <Box flexDirection="column">
+        <Box flexDirection="column" marginTop={1}>
           {streamingText.split("\n").map((line, i) => (
             <Text key={i}>
               {i === 0 ? (
-                <Text color="cyan" bold>{"  ✦ "}</Text>
+                <Text color="#41BAC7" bold>{"  VibPage: "}</Text>
               ) : (
-                <Text>{"    "}</Text>
+                <Text>{"          "}</Text>
               )}
               <Text>{line}</Text>
             </Text>
@@ -219,7 +300,7 @@ export function App({ agent, config }: AppProps) {
         </Box>
       )}
 
-      {/* Loading status */}
+      {/* Loading spinner */}
       {isLoading && (
         <Box>
           <Text>{"  "}</Text>
@@ -236,9 +317,10 @@ export function App({ agent, config }: AppProps) {
         </Box>
       )}
 
-      {/* Input */}
+      {/* Input area with top and bottom borders */}
+      <Separator width={termWidth} />
       <Box>
-        <Text color={isLoading ? "gray" : "green"} bold>
+        <Text color={isLoading ? "gray" : "#97DCE2"} bold>
           {"  ❯ "}
         </Text>
         <TextInput
@@ -246,11 +328,25 @@ export function App({ agent, config }: AppProps) {
           onChange={setInput}
           onSubmit={handleSubmit}
           placeholder={
-            isLoading ? "waiting..." : "Ask me to write something..."
+            isLoading ? "waiting..." : "Type / for commands, or ask anything..."
           }
           focus={!isLoading}
         />
       </Box>
+      <Separator width={termWidth} />
+
+      {/* Slash command suggestions below input */}
+      {showSuggestions && filteredCommands.length > 0 && (
+        <Box flexDirection="column">
+          {filteredCommands.map((cmd) => (
+            <Box key={cmd.name}>
+              <Text>{"  "}</Text>
+              <Text color="#41BAC7" bold>{cmd.name}</Text>
+              <Text dimColor>{"  "}{cmd.description}</Text>
+            </Box>
+          ))}
+        </Box>
+      )}
     </Box>
   );
 }

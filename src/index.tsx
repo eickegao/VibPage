@@ -8,7 +8,16 @@ import { render } from "ink";
 import { loadConfig } from "./config.js";
 import { createAgent } from "./agent.js";
 import { App } from "./ui.js";
-import { initTool } from "./tools/init.js";
+import {
+  checkAstroInstalled,
+  checkWranglerInstalled,
+  installPackage,
+} from "./tools/init.js";
+import {
+  projectConfigExists,
+  loadProjectConfig,
+  saveProjectConfig,
+} from "./project-config.js";
 
 // 5 gradient anchor colors (teal to light cyan)
 const COLORS: [number, number, number][] = [
@@ -62,21 +71,22 @@ const BANNER_LINES = [
   "   ╚═══╝   ╚═╝ ╚═════╝  ╚═╝      ╚═╝  ╚═╝  ╚═════╝  ╚══════╝",
 ];
 
-function askTrust(): Promise<boolean> {
+function ask(question: string): Promise<string> {
   return new Promise((resolve) => {
     const rl = readline.createInterface({
       input: process.stdin,
       output: process.stdout,
     });
-    const cwd = process.cwd();
-    rl.question(
-      chalk.yellow(`  Do you trust this directory? ${chalk.white(cwd)} (y/N) `),
-      (answer) => {
-        rl.close();
-        resolve(answer.trim().toLowerCase() === "y");
-      }
-    );
+    rl.question(question, (answer) => {
+      rl.close();
+      resolve(answer.trim().toLowerCase());
+    });
   });
+}
+
+async function askYesNo(question: string): Promise<boolean> {
+  const answer = await ask(question);
+  return answer === "y" || answer === "yes";
 }
 
 function showWelcome(provider: string, model: string) {
@@ -112,28 +122,88 @@ program
 
     showWelcome(config.provider, config.model);
 
-    // Trust confirmation
-    const trusted = await askTrust();
-    if (!trusted) {
-      console.log(chalk.yellow("  Exiting. Run vibpage in a directory you trust."));
-      process.exit(0);
-    }
-
-    // Auto init
-    console.log(chalk.rgb(105, 203, 212)("  Initializing project..."));
-    try {
-      const result = await initTool.execute("auto-init", {});
-      const text = result.content
-        .filter((c): c is { type: "text"; text: string } => c.type === "text")
-        .map((c) => c.text)
-        .join("\n");
-      for (const line of text.split("\n")) {
-        console.log(chalk.white(`  ${line}`));
+    // Check if already initialized
+    if (projectConfigExists()) {
+      const cfg = loadProjectConfig();
+      console.log(chalk.white(`  Project already initialized in ${process.cwd()}`));
+      if (cfg.cloudflare.projectName) {
+        console.log(chalk.white(`  Cloudflare project: ${cfg.cloudflare.projectName}`));
       }
-      console.log("");
-    } catch (err: any) {
-      console.log(chalk.red(`  Init failed: ${err.message}\n`));
+
+      // Check dependencies
+      const missingPkgs: string[] = [];
+      if (!checkAstroInstalled()) missingPkgs.push("astro");
+      if (!checkWranglerInstalled()) missingPkgs.push("wrangler");
+
+      if (missingPkgs.length > 0) {
+        console.log(
+          chalk.yellow(`\n  Missing packages: ${chalk.white(missingPkgs.join(", "))}`)
+        );
+        console.log(
+          chalk.white("  These are needed for building and deploying your site.")
+        );
+        const install = await askYesNo(
+          chalk.yellow("  Install now? (y/N) ")
+        );
+        if (install) {
+          for (const pkg of missingPkgs) {
+            console.log(chalk.rgb(105, 203, 212)(`  Installing ${pkg}...`));
+            try {
+              await installPackage(pkg);
+              console.log(chalk.white(`  ${pkg} installed`));
+            } catch (err: any) {
+              console.log(chalk.red(`  Failed to install ${pkg}: ${err.message}`));
+            }
+          }
+        } else {
+          console.log(
+            chalk.white("  Skipped. You can install later when you need to publish.")
+          );
+        }
+      } else {
+        console.log(chalk.white("  All dependencies ready"));
+      }
+    } else {
+      // Not initialized — ask user
+      console.log(chalk.white(`  Directory: ${process.cwd()}`));
+      console.log(chalk.yellow("  This directory has not been initialized as a VibPage project."));
+      const doInit = await askYesNo(
+        chalk.yellow("  Initialize now? (y/N) ")
+      );
+      if (!doInit) {
+        console.log(chalk.yellow("  Exiting. Run vibpage again when ready."));
+        process.exit(0);
+      }
+
+      // Create config
+      console.log(chalk.white("  Creating .vibpage.json..."));
+      saveProjectConfig(loadProjectConfig());
+      console.log(chalk.white("  Done"));
+
+      // Ask about dependencies
+      console.log(
+        chalk.white("\n  To build and deploy sites, you need Astro and Wrangler.")
+      );
+      const install = await askYesNo(
+        chalk.yellow("  Install them now? (y/N) ")
+      );
+      if (install) {
+        for (const pkg of ["astro", "wrangler"]) {
+          console.log(chalk.rgb(105, 203, 212)(`  Installing ${pkg}...`));
+          try {
+            await installPackage(pkg);
+            console.log(chalk.white(`  ${pkg} installed`));
+          } catch (err: any) {
+            console.log(chalk.red(`  Failed to install ${pkg}: ${err.message}`));
+          }
+        }
+      } else {
+        console.log(
+          chalk.white("  Skipped. You can install later when you need to publish.")
+        );
+      }
     }
+    console.log("");
 
     const agent = createAgent(config);
 

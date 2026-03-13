@@ -3,8 +3,6 @@ import { join } from "path";
 
 export interface ProjectConfig {
   cloudflare: {
-    apiToken: string;
-    accountId: string;
     projectName: string;
   };
   template: {
@@ -15,8 +13,6 @@ export interface ProjectConfig {
 
 const DEFAULT_PROJECT_CONFIG: ProjectConfig = {
   cloudflare: {
-    apiToken: "",
-    accountId: "",
     projectName: "",
   },
   template: {
@@ -52,12 +48,4 @@ export function saveProjectConfig(config: ProjectConfig): void {
   const configPath = getConfigPath();
   writeFileSync(configPath, JSON.stringify(config, null, 2));
   chmodSync(configPath, 0o600);
-}
-
-export function hasCloudflareConfig(config: ProjectConfig): boolean {
-  return !!(
-    config.cloudflare.apiToken &&
-    config.cloudflare.accountId &&
-    config.cloudflare.projectName
-  );
 }

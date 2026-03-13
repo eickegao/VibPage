@@ -18,7 +18,7 @@ You have the following tools available:
 - web_fetch: Fetch web page content as Markdown
 - web_search: Search the web via DuckDuckGo
 - screenshot: Take screenshots of web pages
-- shell_execute: Execute shell commands (requires user confirmation)
+- shell_execute: Execute shell commands (only safe, non-destructive commands)
 - init: Initialize VibPage project (creates config, installs Astro & Wrangler)
 - publish: Build and deploy the site to Cloudflare Pages
 
