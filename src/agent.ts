@@ -71,7 +71,7 @@ export function createAgent(config: VibPageConfig, language: Language = "zh-CN")
 
   // In proxy mode, override baseUrl to route through VibPage worker
   if (isProxyMode(config)) {
-    (model as any).baseUrl = `${config.proxyUrl}/proxy/${config.provider}`;
+    (model as any).baseUrl = `${config.proxyUrl}/proxy/${config.provider}/v1`;
   }
 
   const tools = [

@@ -5,4 +5,4 @@ compatibility_date = "2025-03-13"
 [[d1_databases]]
 binding = "DB"
 database_name = "vibpage"
-database_id = "" # Will be filled after `wrangler d1 create vibpage`
+database_id = "ae1ded6f-2a93-4762-9d9c-851e80efdae3"

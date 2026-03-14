@@ -174,19 +174,29 @@ async function handleProxy(
     targetUrl += `${separator}key=${env.GOOGLE_API_KEY}`;
   }
 
-  // Build headers: copy original headers, replace auth with real provider key
-  const headers = new Headers(request.headers);
-  headers.delete("Authorization"); // Remove user's VibPage key
+  // Build headers: start fresh, copy content-type, add provider auth
+  const forwardHeaders: Record<string, string> = {
+    "Content-Type": request.headers.get("Content-Type") || "application/json",
+  };
 
+  // Copy any provider-specific headers from the original request (e.g. anthropic-version)
+  for (const [key, value] of request.headers.entries()) {
+    const lk = key.toLowerCase();
+    if (lk.startsWith("anthropic-") || lk === "openai-organization") {
+      forwardHeaders[key] = value;
+    }
+  }
+
+  // Add real provider auth
   const authHeaders = config.getAuthHeaders(env);
   for (const [key, value] of Object.entries(authHeaders)) {
-    headers.set(key, value);
+    forwardHeaders[key] = value;
   }
 
   // Forward request
   const providerRes = await fetch(targetUrl, {
     method: request.method,
-    headers,
+    headers: forwardHeaders,
     body: request.body,
   });
 
