@@ -2,7 +2,7 @@ import { Agent } from "@mariozechner/pi-agent-core";
 import { getModel } from "@mariozechner/pi-ai";
 import chalk from "chalk";
 import type { VibPageConfig } from "./config.js";
-import { getApiKey } from "./config.js";
+import { getApiKey, isProxyMode } from "./config.js";
 import { type Language, LANGUAGE_LABELS } from "./project-config.js";
 import { readFileTool, writeFileTool } from "./tools/file.js";
 import { webFetchTool } from "./tools/web-fetch.js";
@@ -11,7 +11,6 @@ import { screenshotTool } from "./tools/screenshot.js";
 import { shellExecuteTool } from "./tools/shell.js";
 import { browserTaskTool } from "./tools/browser-task.js";
 import { actionSaveTool, actionListTool, actionRunTool, actionDeleteTool } from "./tools/action.js";
-
 
 export function buildSystemPrompt(language: Language): string {
   const langName = LANGUAGE_LABELS[language];
@@ -60,13 +59,21 @@ export function createAgent(config: VibPageConfig, language: Language = "zh-CN")
   if (!apiKey) {
     console.error(
       chalk.red(
-        `No API key found. Set ${config.provider.toUpperCase()}_API_KEY environment variable or configure in ~/.vibpage/config.json`
+        config.proxyUrl
+          ? "No VibPage API key found. Set vibpageApiKey in ~/.vibpage/config.json"
+          : `No API key found. Set ${config.provider.toUpperCase()}_API_KEY environment variable or configure in ~/.vibpage/config.json`
       )
     );
     process.exit(1);
   }
 
   const model = getModel(config.provider as any, config.model as any);
+
+  // In proxy mode, override baseUrl to route through VibPage worker
+  if (isProxyMode(config)) {
+    (model as any).baseUrl = `${config.proxyUrl}/proxy/${config.provider}`;
+  }
+
   const tools = [
     readFileTool,
     writeFileTool,

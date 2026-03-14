@@ -71,19 +71,36 @@ interface ComputerCallOutput {
   status: string;
 }
 
-function getOpenAIKey(): string {
-  if (process.env.OPENAI_API_KEY) return process.env.OPENAI_API_KEY;
+interface BrowserApiConfig {
+  apiKey: string;
+  endpoint: string; // Full URL for Computer Use API
+}
+
+function getBrowserApiConfig(): BrowserApiConfig {
   const configPath = join(homedir(), ".vibpage", "config.json");
+  let config: any = {};
   if (existsSync(configPath)) {
-    const config = JSON.parse(readFileSync(configPath, "utf-8"));
-    if (config.provider === "openai" && config.apiKey) return config.apiKey;
-    if (config.apiKey && !config.provider) return config.apiKey;
+    config = JSON.parse(readFileSync(configPath, "utf-8"));
   }
-  return "";
+
+  // Proxy mode: route through VibPage worker
+  if (config.proxyUrl && config.vibpageApiKey) {
+    return {
+      apiKey: config.vibpageApiKey,
+      endpoint: `${config.proxyUrl}/proxy/openai/v1/responses`,
+    };
+  }
+
+  // Direct mode
+  const apiKey = process.env.OPENAI_API_KEY || config.apiKey || "";
+  return {
+    apiKey,
+    endpoint: "https://api.openai.com/v1/responses",
+  };
 }
 
 async function callComputerUse(
-  apiKey: string,
+  config: BrowserApiConfig,
   input: string | any[],
   previousResponseId?: string
 ): Promise<{ id: string; output: any[] }> {
@@ -96,18 +113,18 @@ async function callComputerUse(
     body.previous_response_id = previousResponseId;
   }
 
-  const res = await fetch("https://api.openai.com/v1/responses", {
+  const res = await fetch(config.endpoint, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
+      Authorization: `Bearer ${config.apiKey}`,
     },
     body: JSON.stringify(body),
   });
 
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`OpenAI API error ${res.status}: ${text}`);
+    throw new Error(`API error ${res.status}: ${text}`);
   }
 
   return res.json();
@@ -181,10 +198,10 @@ export const browserTaskTool: AgentTool<typeof browserTaskParams> = {
     "Execute any task in a browser using AI vision and automation. Opens a visible browser, navigates to the URL, and uses AI to understand the page and perform actions (click, type, scroll, etc.) to complete the task. The browser preserves login sessions across runs. Examples: fill forms, post to social media, download reports, interact with any website.",
   parameters: browserTaskParams,
   execute: async (_toolCallId, params) => {
-    const apiKey = getOpenAIKey();
-    if (!apiKey) {
+    const apiConfig = getBrowserApiConfig();
+    if (!apiConfig.apiKey) {
       throw new Error(
-        "OpenAI API key required for browser tasks. Set OPENAI_API_KEY or configure in ~/.vibpage/config.json with provider: openai"
+        "API key required for browser tasks. Set OPENAI_API_KEY, or configure proxyUrl + vibpageApiKey in ~/.vibpage/config.json"
       );
     }
 
@@ -235,7 +252,7 @@ IMPORTANT: Do NOT stop early. Keep going until the task is fully completed. If w
 
 Start by taking a screenshot to see the current page state.`;
 
-      let response = await callComputerUse(apiKey, taskPrompt);
+      let response = await callComputerUse(apiConfig, taskPrompt);
       let turns = 0;
       logs.push(`Started: ${params.task}`);
       logs.push(`URL: ${params.url}`);
@@ -279,7 +296,7 @@ Start by taking a screenshot to see the current page state.`;
           await new Promise((r) => setTimeout(r, 3000));
           const screenshot = await takeScreenshot(page);
           response = await callComputerUse(
-            apiKey,
+            apiConfig,
             [
               {
                 type: "computer_call_output",
@@ -310,7 +327,7 @@ Start by taking a screenshot to see the current page state.`;
 
         const screenshot = await takeScreenshot(page);
         response = await callComputerUse(
-          apiKey,
+          apiConfig,
           [
             {
               type: "computer_call_output",

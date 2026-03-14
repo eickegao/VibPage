@@ -7,6 +7,9 @@ export interface VibPageConfig {
   model: string;
   apiKey: string;
   outputDir: string;
+  // Proxy mode: route all API calls through VibPage worker
+  proxyUrl: string;      // e.g. "https://api.vibpage.com"
+  vibpageApiKey: string;  // User's VibPage API key
 }
 
 const DEFAULT_CONFIG: VibPageConfig = {
@@ -14,6 +17,8 @@ const DEFAULT_CONFIG: VibPageConfig = {
   model: "claude-sonnet-4-20250514",
   apiKey: "",
   outputDir: ".",
+  proxyUrl: "",
+  vibpageApiKey: "",
 };
 
 const CONFIG_DIR = join(homedir(), ".vibpage");
@@ -36,10 +41,19 @@ export function saveConfig(config: VibPageConfig): void {
 }
 
 export function getApiKey(config: VibPageConfig): string {
+  // In proxy mode, use VibPage API key
+  if (config.proxyUrl && config.vibpageApiKey) {
+    return config.vibpageApiKey;
+  }
+  // Direct mode: use provider-specific keys
   const envKeys: Record<string, string> = {
     anthropic: "ANTHROPIC_API_KEY",
     openai: "OPENAI_API_KEY",
     google: "GOOGLE_API_KEY",
   };
   return process.env[envKeys[config.provider]] || config.apiKey;
+}
+
+export function isProxyMode(config: VibPageConfig): boolean {
+  return !!(config.proxyUrl && config.vibpageApiKey);
 }
