@@ -22,6 +22,43 @@ async function authenticateUser(request: Request, db: D1Database): Promise<User 
   return user || null;
 }
 
+// --- Credits pricing ---
+// 1 credit = $0.01. Prices include 2x markup over provider cost.
+// Per-million-token rates converted to per-token multipliers.
+
+interface ModelPricing {
+  inputCreditsPerToken: number;   // credits per input token
+  outputCreditsPerToken: number;  // credits per output token
+}
+
+const MODEL_PRICING: Record<string, ModelPricing> = {
+  // OpenAI — GPT-5.4: cost $2.50/$15.00 per M → 2x = $5.00/$30.00 per M = 500/3000 credits per M
+  "gpt-5.4":           { inputCreditsPerToken: 500 / 1_000_000, outputCreditsPerToken: 3000 / 1_000_000 },
+  // GPT-4o: cost $2.50/$10.00 per M → 2x = $5.00/$20.00 per M
+  "gpt-4o":            { inputCreditsPerToken: 500 / 1_000_000, outputCreditsPerToken: 2000 / 1_000_000 },
+  "gpt-4o-2024-08-06": { inputCreditsPerToken: 500 / 1_000_000, outputCreditsPerToken: 2000 / 1_000_000 },
+  // GPT-4o-mini: cost $0.15/$0.60 per M → 2x = $0.30/$1.20 per M
+  "gpt-4o-mini":       { inputCreditsPerToken: 30 / 1_000_000, outputCreditsPerToken: 120 / 1_000_000 },
+};
+
+// Default pricing for unknown models (use GPT-4o rates as safe default)
+const DEFAULT_PRICING: ModelPricing = { inputCreditsPerToken: 500 / 1_000_000, outputCreditsPerToken: 2000 / 1_000_000 };
+
+function getModelPricing(model: string): ModelPricing {
+  // Try exact match first, then prefix match
+  if (MODEL_PRICING[model]) return MODEL_PRICING[model];
+  for (const [key, pricing] of Object.entries(MODEL_PRICING)) {
+    if (model.startsWith(key)) return pricing;
+  }
+  return DEFAULT_PRICING;
+}
+
+function calculateCredits(model: string, promptTokens: number, completionTokens: number): number {
+  const pricing = getModelPricing(model);
+  const credits = promptTokens * pricing.inputCreditsPerToken + completionTokens * pricing.outputCreditsPerToken;
+  return Math.ceil(credits * 1000) / 1000; // round up to 3 decimal places
+}
+
 // --- Usage tracking ---
 
 async function recordUsage(
@@ -33,13 +70,15 @@ async function recordUsage(
   completionTokens: number,
   totalTokens: number
 ): Promise<void> {
+  const creditsConsumed = calculateCredits(model, promptTokens, completionTokens);
+
   await db.batch([
     db.prepare(
-      "INSERT INTO usage_log (user_id, model, endpoint, prompt_tokens, completion_tokens, total_tokens) VALUES (?, ?, ?, ?, ?, ?)"
-    ).bind(userId, model, endpoint, promptTokens, completionTokens, totalTokens),
+      "INSERT INTO usage_log (user_id, model, endpoint, prompt_tokens, completion_tokens, total_tokens, credits_consumed) VALUES (?, ?, ?, ?, ?, ?, ?)"
+    ).bind(userId, model, endpoint, promptTokens, completionTokens, totalTokens, creditsConsumed),
     db.prepare(
       "UPDATE users SET balance = balance - ?, updated_at = datetime('now') WHERE id = ?"
-    ).bind(totalTokens, userId),
+    ).bind(creditsConsumed, userId),
   ]);
 }
 
@@ -267,6 +306,7 @@ async function handleUsage(request: Request, env: Env, user: User): Promise<Resp
       SUM(prompt_tokens) as prompt_tokens,
       SUM(completion_tokens) as completion_tokens,
       SUM(total_tokens) as total_tokens,
+      SUM(credits_consumed) as credits_consumed,
       COUNT(*) as requests
     FROM usage_log
     WHERE user_id = ? AND created_at >= datetime('now', '-' || ? || ' days')
