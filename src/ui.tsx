@@ -355,14 +355,14 @@ function UsageBar({ used, total, balance, width }: { used: number; total: number
       </Box>
       <Box marginTop={1} flexDirection="column">
         <Text>
-          <Text dimColor>Used:    </Text>
-          <Text bold>{used.toFixed(2)}</Text>
-          <Text dimColor> credits (${(used * 0.01).toFixed(2)})</Text>
+          <Text color="white">Used:    </Text>
+          <Text bold color="white">{used.toFixed(2)}</Text>
+          <Text color="white"> credits</Text>
         </Text>
         <Text>
-          <Text dimColor>Balance: </Text>
+          <Text color="white">Balance: </Text>
           <Text bold color="green">{balance.toFixed(2)}</Text>
-          <Text dimColor> credits (${(balance * 0.01).toFixed(2)})</Text>
+          <Text color="white"> credits</Text>
         </Text>
       </Box>
     </Box>
@@ -385,6 +385,10 @@ export function App({ agent, config }: AppProps) {
 
   const [mode, setMode] = useState<UIMode>("normal");
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const modeRef = useRef<UIMode>(mode);
+  const selectedIndexRef = useRef(0);
+  modeRef.current = mode;
+  selectedIndexRef.current = selectedIndex;
 
   // Action menu state
   const [actionsList, setActionsList] = useState<Action[]>([]);
@@ -393,6 +397,9 @@ export function App({ agent, config }: AppProps) {
   // Usage display state
   const [usageData, setUsageData] = useState<{ balance: number; totalCreditsUsed: number; initialBalance: number } | null>(null);
 
+  // Menu breadcrumb path for chat history display
+  const [menuPath, setMenuPath] = useState<string[]>([]);
+
   // Filtered commands for command-select mode
   const filteredCommands = input.startsWith("/")
     ? SLASH_COMMANDS.filter((cmd) => cmd.name.startsWith(input.toLowerCase()))
@@ -400,6 +407,8 @@ export function App({ agent, config }: AppProps) {
 
   // Determine visible modes
   const isMenuMode = mode !== "normal" && !isLoading;
+  // Sub-menu = any menu deeper than command-select (hides input box)
+  const isSubMenu = isMenuMode && mode !== "command-select";
 
   // Menu item counts for each mode
   function getMenuLength(): number {
@@ -422,6 +431,8 @@ export function App({ agent, config }: AppProps) {
   useInput((ch, key) => {
     if (isLoading) return;
     if (!isMenuMode) return;
+    // In command-select mode, TextInput handles Enter via onSubmit
+    if (mode === "command-select" && key.return) return;
 
     const menuLen = getMenuLength();
 
@@ -438,15 +449,24 @@ export function App({ agent, config }: AppProps) {
       if (mode === "action-detail") {
         setSelectedAction(null);
         setSelectedIndex(0);
+        setMenuPath((p) => p.slice(0, -1));
         setMode("action-list");
       } else if (mode === "action-list") {
         setSelectedIndex(0);
+        setMenuPath((p) => p.slice(0, -1));
         setMode("action-select");
+      } else if (mode === "action-select" || mode === "language-select") {
+        setSelectedIndex(0);
+        setMenuPath([]);
+        setMode("normal");
+        setInput("");
       } else if (mode === "usage-display") {
         setUsageData(null);
+        setMenuPath([]);
         setMode("normal");
         setInput("");
       } else {
+        setMenuPath([]);
         setMode("normal");
         setInput("");
       }
@@ -457,6 +477,10 @@ export function App({ agent, config }: AppProps) {
       return;
     }
   });
+
+  function buildPathMessage(extraSegments: string[] = []): string {
+    return [...menuPath, ...extraSegments].join(" / ");
+  }
 
   function handleMenuSelect() {
     switch (mode) {
@@ -473,9 +497,12 @@ export function App({ agent, config }: AppProps) {
           saveProjectConfig(projectConfig);
           agent.setSystemPrompt(buildSystemPrompt(option.code));
           setCurrentLang(option.code);
+          const pathMsg = buildPathMessage([option.label]);
+          setMenuPath([]);
           setMode("normal");
           setMessages((prev) => [
             ...prev,
+            { id: nextId(), role: "user", text: pathMsg },
             { id: nextId(), role: "assistant", text: `Language set to ${option.label}.` },
           ]);
         }
@@ -484,24 +511,31 @@ export function App({ agent, config }: AppProps) {
       case "action-select": {
         if (selectedIndex === 0) {
           // Create new Actions
-          setMode("normal");
           const label = ACTION_MENU_LABELS.create[currentLang] || ACTION_MENU_LABELS.create.en;
+          const pathMsg = buildPathMessage([label]);
+          setMenuPath([]);
+          setMode("normal");
           setMessages((prev) => [
             ...prev,
-            { id: nextId(), role: "user", text: label },
+            { id: nextId(), role: "user", text: pathMsg },
           ]);
           sendPrompt("I want to create a new automation action. Ask me what task I want to automate, which website URL it targets, and what steps are involved. Then save it with action_save.");
         } else {
           // View all Actions → load and show list
+          const label = ACTION_MENU_LABELS.listAll[currentLang] || ACTION_MENU_LABELS.listAll.en;
           const actions = listActions();
           if (actions.length === 0) {
             const noMsg = ACTION_MENU_LABELS.noActions[currentLang] || ACTION_MENU_LABELS.noActions.en;
+            const pathMsg = buildPathMessage([label]);
+            setMenuPath([]);
             setMessages((prev) => [
               ...prev,
+              { id: nextId(), role: "user", text: pathMsg },
               { id: nextId(), role: "assistant", text: noMsg },
             ]);
             setMode("normal");
           } else {
+            setMenuPath((p) => [...p, label]);
             setActionsList(actions);
             setSelectedIndex(0);
             setMode("action-list");
@@ -512,6 +546,7 @@ export function App({ agent, config }: AppProps) {
       case "action-list": {
         const action = actionsList[selectedIndex];
         if (action) {
+          setMenuPath((p) => [...p, action.name]);
           setSelectedAction(action);
           setSelectedIndex(0);
           setMode("action-detail");
@@ -520,28 +555,25 @@ export function App({ agent, config }: AppProps) {
       }
       case "action-detail": {
         if (!selectedAction) break;
-        setMode("normal");
         const actionName = selectedAction.name;
+        const labels = [
+          ACTION_MENU_LABELS.run[currentLang] || ACTION_MENU_LABELS.run.en,
+          ACTION_MENU_LABELS.edit[currentLang] || ACTION_MENU_LABELS.edit.en,
+          ACTION_MENU_LABELS.delete[currentLang] || ACTION_MENU_LABELS.delete.en,
+        ];
+        const selectedLabel = labels[selectedIndex];
+        const pathMsg = buildPathMessage([selectedLabel]);
+        setMenuPath([]);
+        setMode("normal");
+        setMessages((prev) => [
+          ...prev,
+          { id: nextId(), role: "user", text: pathMsg },
+        ]);
         if (selectedIndex === 0) {
-          // Run
-          setMessages((prev) => [
-            ...prev,
-            { id: nextId(), role: "user", text: `${ACTION_MENU_LABELS.run[currentLang]} → ${actionName}` },
-          ]);
           sendPrompt(`Run the action "${actionName}" using action_run. If it needs parameters, ask me for them. Then execute it step by step with browser_task.`);
         } else if (selectedIndex === 1) {
-          // Edit
-          setMessages((prev) => [
-            ...prev,
-            { id: nextId(), role: "user", text: `${ACTION_MENU_LABELS.edit[currentLang]} → ${actionName}` },
-          ]);
           sendPrompt(`Load the action "${actionName}" using action_run (to see its current definition). Show me its current steps and parameters, then ask me what I want to change. After I confirm the changes, save it with action_save.`);
         } else {
-          // Delete
-          setMessages((prev) => [
-            ...prev,
-            { id: nextId(), role: "user", text: `${ACTION_MENU_LABELS.delete[currentLang]} → ${actionName}` },
-          ]);
           sendPrompt(`Delete the action "${actionName}" using action_delete. Confirm what was deleted.`);
         }
         setSelectedAction(null);
@@ -678,10 +710,7 @@ export function App({ agent, config }: AppProps) {
       }
 
       if (cmd.name === "/actions") {
-        setMessages((prev) => [
-          ...prev,
-          { id: nextId(), role: "user", text: cmd.name },
-        ]);
+        setMenuPath([cmd.name]);
         setSelectedIndex(0);
         setMode("action-select");
         return;
@@ -690,10 +719,7 @@ export function App({ agent, config }: AppProps) {
       if (cmd.name === "/language") {
         const lang = loadProjectConfig().language;
         const currentIdx = LANGUAGE_OPTIONS.findIndex((o) => o.code === lang);
-        setMessages((prev) => [
-          ...prev,
-          { id: nextId(), role: "user", text: cmd.name },
-        ]);
+        setMenuPath([cmd.name]);
         setSelectedIndex(currentIdx >= 0 ? currentIdx : 0);
         setMode("language-select");
         return;
@@ -731,10 +757,6 @@ export function App({ agent, config }: AppProps) {
       }
 
       if (cmd.name === "/usage") {
-        setMessages((prev) => [
-          ...prev,
-          { id: nextId(), role: "user", text: cmd.name },
-        ]);
         // Fetch usage from Worker API
         const cfg = loadConfig();
         if (!cfg.proxyUrl || !cfg.vibpageApiKey) {
@@ -756,6 +778,7 @@ export function App({ agent, config }: AppProps) {
             totalCreditsUsed: totalUsed,
             initialBalance: data.balance + totalUsed,
           });
+          setMenuPath([cmd.name]);
           setMode("usage-display");
         } catch (err: any) {
           setMessages((prev) => [
@@ -794,8 +817,13 @@ export function App({ agent, config }: AppProps) {
       const trimmed = value.trim();
       if (!trimmed) return;
       // In command-select mode, Enter selects the highlighted command
-      if (mode === "command-select") {
-        handleMenuSelect();
+      if (modeRef.current === "command-select") {
+        const matches = SLASH_COMMANDS.filter((cmd) => cmd.name.startsWith(trimmed.toLowerCase()));
+        const cmd = matches[selectedIndexRef.current];
+        if (cmd) {
+          setInput("");
+          executeCommand(cmd);
+        }
         return;
       }
       if (isMenuMode) return;
@@ -935,29 +963,27 @@ export function App({ agent, config }: AppProps) {
 
       {/* Input area */}
       <Separator width={termWidth} />
-      {mode === "usage-display" ? null : (
-      <Box>
-        <Text color={isLoading ? "gray" : "#97DCE2"} bold>
-          {"  ❯ "}
-        </Text>
-        {isMenuMode && mode !== "command-select" ? (
-          <Text dimColor>↑↓ select, Enter confirm, Esc back</Text>
-        ) : (
-          <TextInput
-            value={input}
-            onChange={handleInputChange}
-            onSubmit={handleSubmit}
-            placeholder={
-              isLoading ? "waiting..." : "Type / for commands, or ask anything..."
-            }
-            focus={!isLoading && (!isMenuMode || mode === "command-select")}
-          />
-        )}
-      </Box>
-      )}
-      <Separator width={termWidth} />
+      {!isSubMenu ? (
+        <>
+          <Box>
+            <Text color={isLoading ? "gray" : "#97DCE2"} bold>
+              {"  ❯ "}
+            </Text>
+            <TextInput
+              value={input}
+              onChange={handleInputChange}
+              onSubmit={handleSubmit}
+              placeholder={
+                isLoading ? "waiting..." : "Type / for commands, or ask anything..."
+              }
+              focus={!isLoading && (!isMenuMode || mode === "command-select")}
+            />
+          </Box>
+          <Separator width={termWidth} />
+        </>
+      ) : null}
 
-      {/* Dynamic menu */}
+      {/* Dynamic menu (command-select renders below input, sub-menus below separator) */}
       {renderMenu()}
 
       {/* Usage display */}
@@ -974,9 +1000,13 @@ export function App({ agent, config }: AppProps) {
               width={Math.min(termWidth - 8, 60)}
             />
           </Box>
-          <Box marginTop={1}>
-            <Text dimColor>Esc to cancel</Text>
-          </Box>
+        </Box>
+      )}
+
+      {/* Sub-menu hint at bottom */}
+      {isSubMenu && (
+        <Box marginTop={1} paddingLeft={2}>
+          <Text dimColor>↑↓ select  Enter confirm  Esc cancel</Text>
         </Box>
       )}
     </Box>
