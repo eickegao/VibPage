@@ -1,0 +1,52 @@
+---
+const features = [
+  {
+    icon: "🌐",
+    title: "Browser Automation",
+    desc: "Control any website with natural language. Click, type, scroll, navigate — VibPage handles it all through AI vision.",
+  },
+  {
+    icon: "🔄",
+    title: "Reusable Actions",
+    desc: "Save your automation workflows as Actions. Run them anytime with different parameters — like macros for the web.",
+  },
+  {
+    icon: "🔐",
+    title: "Persistent Sessions",
+    desc: "Login once, stay logged in. VibPage preserves browser sessions across runs so you don't re-authenticate every time.",
+  },
+  {
+    icon: "⚡",
+    title: "CLI-First",
+    desc: "Built for developers and power users. Integrate browser automation into your scripts, cron jobs, or CI pipelines.",
+  },
+  {
+    icon: "🤖",
+    title: "Multi-Model AI",
+    desc: "Powered by GPT, Claude, and Gemini. Choose the best model for your task, all through a single unified interface.",
+  },
+  {
+    icon: "📊",
+    title: "Usage Tracking",
+    desc: "Built-in credits system with real-time usage monitoring. Know exactly how much each automation costs.",
+  },
+];
+---
+
+<section id="features" class="py-20 px-6">
+  <div class="max-w-6xl mx-auto">
+    <h2 class="text-3xl font-bold text-center mb-4">Everything you need</h2>
+    <p class="text-gray-400 text-center mb-12 max-w-2xl mx-auto">
+      VibPage combines AI vision, browser automation, and a powerful CLI into one tool.
+    </p>
+    <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+      {features.map((f) => (
+        <div class="p-6 rounded-xl bg-gray-900 border border-gray-800 hover:border-teal-400/30 transition">
+          <div class="text-3xl mb-4">{f.icon}</div>
+          <h3 class="text-lg font-semibold mb-2">{f.title}</h3>
+          <p class="text-sm text-gray-400 leading-relaxed">{f.desc}</p>
+        </div>
+      ))}
+    </div>
+  </div>
+</section>

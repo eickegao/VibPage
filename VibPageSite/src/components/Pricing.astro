@@ -1,0 +1,188 @@
+---
+const plans = [
+  {
+    name: "Pay As You Go",
+    monthlyPrice: 20,
+    yearlyPrice: 16,
+    credits: 0,
+    badge: null,
+    trialText: "Start 3-Day Free Trial",
+    byok: true,
+    features: [
+      "All AI models",
+      "Browser automation",
+      "Reusable Actions",
+      "Single device only",
+      "Email support",
+    ],
+    cta: "Start Free Trial",
+    highlight: false,
+  },
+  {
+    name: "Hobby",
+    monthlyPrice: 30,
+    yearlyPrice: 24,
+    credits: 3000,
+    badge: null,
+    trialText: "Start 3-Day Free Trial",
+    byok: false,
+    features: [
+      "3,000 credits/month",
+      "All AI models",
+      "Browser automation",
+      "Reusable Actions",
+      "Email support",
+    ],
+    cta: "Start Free Trial",
+    highlight: false,
+  },
+  {
+    name: "Pro",
+    monthlyPrice: 100,
+    yearlyPrice: 80,
+    credits: 10000,
+    badge: "Most Popular",
+    trialText: null,
+    byok: false,
+    features: [
+      "10,000 credits/month",
+      "All AI models",
+      "Browser automation",
+      "Reusable Actions",
+      "Priority support",
+    ],
+    cta: "Go Pro",
+    highlight: true,
+  },
+  {
+    name: "Max",
+    monthlyPrice: 200,
+    yearlyPrice: 160,
+    credits: 20000,
+    badge: null,
+    trialText: null,
+    byok: false,
+    features: [
+      "20,000 credits/month",
+      "All AI models",
+      "Browser automation",
+      "Reusable Actions",
+      "Dedicated support",
+    ],
+    cta: "Go Max",
+    highlight: false,
+  },
+];
+---
+
+<section id="pricing" class="py-20 px-6">
+  <div class="max-w-6xl mx-auto">
+    <h2 class="text-3xl font-bold text-center mb-8">Simple, transparent pricing</h2>
+
+    <!-- Monthly / Yearly toggle -->
+    <div class="flex items-center justify-center gap-3 mb-12" id="billing-toggle">
+      <span class="text-sm font-medium text-white" id="label-monthly">Monthly</span>
+      <button
+        id="toggle-btn"
+        class="relative w-14 h-7 bg-gray-700 rounded-full cursor-pointer transition"
+        aria-label="Toggle billing period"
+      >
+        <span id="toggle-dot" class="absolute top-0.5 left-0.5 w-6 h-6 bg-white rounded-full transition-transform"></span>
+      </button>
+      <span class="text-sm font-medium text-gray-500" id="label-yearly">
+        Yearly <span class="text-teal-400 text-xs font-semibold ml-1">Save 20%</span>
+      </span>
+    </div>
+
+    <div class="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
+      {plans.map((plan) => (
+        <div class={`relative p-8 rounded-xl border flex flex-col ${
+          plan.highlight
+            ? "bg-teal-400/5 border-teal-400/40 shadow-lg shadow-teal-400/10"
+            : "bg-gray-900 border-gray-800"
+        }`}>
+          {plan.badge && (
+            <div class="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-1 text-xs font-semibold bg-teal-500 text-gray-950 rounded-full">
+              {plan.badge}
+            </div>
+          )}
+          <h3 class="text-xl font-semibold mb-4">{plan.name}</h3>
+          <div class="mb-1">
+            <span class="text-4xl font-bold price-monthly">${plan.monthlyPrice}</span>
+            <span class="text-4xl font-bold price-yearly hidden">${plan.yearlyPrice}</span>
+            <span class="text-gray-400 text-sm">/month</span>
+          </div>
+          <p class="text-sm text-gray-500 mb-1 yearly-total hidden">
+            ${plan.yearlyPrice * 12}/year
+          </p>
+          {plan.byok ? (
+            <div class="mb-4">
+              <p class="text-sm font-bold text-amber-400 mb-1">Bring Your Own API Key *</p>
+              <p class="text-xs text-gray-500 leading-relaxed">
+                * Requires your own OpenAI, Anthropic, or Google API account and key.
+              </p>
+            </div>
+          ) : plan.credits > 0 ? (
+            <p class="text-sm text-teal-400 mb-2">{plan.credits.toLocaleString()} credits/month</p>
+          ) : null}
+          {plan.trialText && (
+            <p class="text-xs text-amber-400 mb-4">
+              {plan.trialText}
+            </p>
+          )}
+          {!plan.trialText && !plan.byok && <div class="mb-4" />}
+          <ul class="space-y-3 mb-8 flex-1">
+            {plan.features.map((f) => (
+              <li class="flex items-start gap-2 text-sm text-gray-300">
+                <span class="text-teal-400 mt-0.5">✓</span>
+                <span>{f}</span>
+              </li>
+            ))}
+          </ul>
+          <a
+            href={`/signup?plan=${plan.name.toLowerCase().replace(/\s+/g, '-')}`}
+            class={`block text-center py-3 rounded-lg font-medium text-sm transition ${
+              plan.highlight
+                ? "bg-teal-500 hover:bg-teal-400 text-gray-950"
+                : "bg-gray-800 hover:bg-gray-700 text-white"
+            }`}
+          >
+            {plan.cta}
+          </a>
+        </div>
+      ))}
+    </div>
+  </div>
+</section>
+
+<script>
+  const btn = document.getElementById('toggle-btn')!;
+  const dot = document.getElementById('toggle-dot')!;
+  const labelMonthly = document.getElementById('label-monthly')!;
+  const labelYearly = document.getElementById('label-yearly')!;
+  const priceMonthly = document.querySelectorAll('.price-monthly');
+  const priceYearly = document.querySelectorAll('.price-yearly');
+  const yearlyTotals = document.querySelectorAll('.yearly-total');
+
+  let isYearly = false;
+
+  btn.addEventListener('click', () => {
+    isYearly = !isYearly;
+
+    // Toggle dot position
+    dot.style.transform = isYearly ? 'translateX(1.75rem)' : 'translateX(0)';
+    btn.classList.toggle('bg-teal-500', isYearly);
+    btn.classList.toggle('bg-gray-700', !isYearly);
+
+    // Toggle label colors
+    labelMonthly.classList.toggle('text-white', !isYearly);
+    labelMonthly.classList.toggle('text-gray-500', isYearly);
+    labelYearly.classList.toggle('text-white', isYearly);
+    labelYearly.classList.toggle('text-gray-500', !isYearly);
+
+    // Toggle prices
+    priceMonthly.forEach(el => el.classList.toggle('hidden', isYearly));
+    priceYearly.forEach(el => el.classList.toggle('hidden', !isYearly));
+    yearlyTotals.forEach(el => el.classList.toggle('hidden', !isYearly));
+  });
+</script>
