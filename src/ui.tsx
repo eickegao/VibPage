@@ -11,6 +11,7 @@ import {
 } from "./project-config.js";
 import { buildSystemPrompt } from "./agent.js";
 import { closeBrowser, openBrowser } from "./tools/browser-task.js";
+import { listActions, type Action } from "./tools/action.js";
 
 interface Message {
   id: number;
@@ -41,20 +42,20 @@ interface SlashCommand {
 }
 
 const SLASH_COMMANDS: SlashCommand[] = [
-{
-    name: "/action",
+  {
+    name: "/actions",
     description: {
-      "zh-CN": "管理自动化动作（创建/列表/运行）",
-      "zh-TW": "管理自動化動作（建立/列表/執行）",
-      en: "Manage actions (create/list/run)",
-      fr: "Gérer les actions (créer/lister/exécuter)",
-      de: "Aktionen verwalten (erstellen/auflisten/ausführen)",
-      es: "Gestionar acciones (crear/listar/ejecutar)",
-      pt: "Gerenciar ações (criar/listar/executar)",
-      ko: "액션 관리 (생성/목록/실행)",
-      ja: "アクション管理（作成/一覧/実行）",
+      "zh-CN": "管理自动化 Actions",
+      "zh-TW": "管理自動化 Actions",
+      en: "Manage Actions",
+      fr: "Gérer les Actions",
+      de: "Actions verwalten",
+      es: "Gestionar Actions",
+      pt: "Gerenciar Actions",
+      ko: "Actions 관리",
+      ja: "Actions 管理",
     },
-    prompt: "Please help me manage my actions. First, list all saved actions using action_list. Then ask me if I want to: 1) Create a new action, 2) Run an existing action, or 3) Delete an action.",
+    prompt: "",
   },
   {
     name: "/run",
@@ -160,7 +161,83 @@ const LANGUAGE_OPTIONS: { code: Language; label: string }[] = [
   { code: "ja", label: "日本語" },
 ];
 
-type UIMode = "normal" | "command-select" | "language-select";
+// i18n labels for action menus
+const ACTION_MENU_LABELS: Record<string, Record<Language, string>> = {
+  create: {
+    "zh-CN": "创建新 Actions",
+    "zh-TW": "建立新 Actions",
+    en: "Create new Actions",
+    fr: "Créer de nouvelles Actions",
+    de: "Neue Actions erstellen",
+    es: "Crear nuevas Actions",
+    pt: "Criar novas Actions",
+    ko: "새 Actions 만들기",
+    ja: "新しい Actions を作成",
+  },
+  listAll: {
+    "zh-CN": "查看所有 Actions",
+    "zh-TW": "檢視所有 Actions",
+    en: "View all Actions",
+    fr: "Voir toutes les Actions",
+    de: "Alle Actions anzeigen",
+    es: "Ver todas las Actions",
+    pt: "Ver todas as Actions",
+    ko: "모든 Actions 보기",
+    ja: "すべての Actions を表示",
+  },
+  run: {
+    "zh-CN": "运行",
+    "zh-TW": "執行",
+    en: "Run",
+    fr: "Exécuter",
+    de: "Ausführen",
+    es: "Ejecutar",
+    pt: "Executar",
+    ko: "실행",
+    ja: "実行",
+  },
+  edit: {
+    "zh-CN": "编辑",
+    "zh-TW": "編輯",
+    en: "Edit",
+    fr: "Modifier",
+    de: "Bearbeiten",
+    es: "Editar",
+    pt: "Editar",
+    ko: "편집",
+    ja: "編集",
+  },
+  delete: {
+    "zh-CN": "删除",
+    "zh-TW": "刪除",
+    en: "Delete",
+    fr: "Supprimer",
+    de: "Löschen",
+    es: "Eliminar",
+    pt: "Excluir",
+    ko: "삭제",
+    ja: "削除",
+  },
+  noActions: {
+    "zh-CN": "暂无 Actions，请先创建。",
+    "zh-TW": "尚無 Actions，請先建立。",
+    en: "No Actions found. Create one first.",
+    fr: "Aucune Action. Créez-en une d'abord.",
+    de: "Keine Actions gefunden. Erstellen Sie zuerst eine.",
+    es: "No hay Actions. Crea una primero.",
+    pt: "Nenhuma Action encontrada. Crie uma primeiro.",
+    ko: "Actions가 없습니다. 먼저 만들어 주세요.",
+    ja: "Actions がありません。まず作成してください。",
+  },
+};
+
+type UIMode =
+  | "normal"
+  | "command-select"
+  | "language-select"
+  | "action-select"    // top-level: create / view all
+  | "action-list"      // list of saved actions
+  | "action-detail";   // run / edit / delete for a selected action
 
 function MessageItem({ msg }: { msg: Message }) {
   switch (msg.role) {
@@ -212,6 +289,35 @@ function Separator({ width }: { width: number }) {
   );
 }
 
+function SelectMenu({ items, selectedIndex, currentLang }: {
+  items: { label: string; desc?: string }[];
+  selectedIndex: number;
+  currentLang: Language;
+}) {
+  return (
+    <Box flexDirection="column">
+      {items.map((item, i) => (
+        <Box key={i}>
+          <Text>{"  "}</Text>
+          {i === selectedIndex ? (
+            <>
+              <Text color="#26AAB9" bold>{"❯ "}</Text>
+              <Text color="#26AAB9" bold>{item.label}</Text>
+              {item.desc && <Text color="#97DCE2">{"  "}{item.desc}</Text>}
+            </>
+          ) : (
+            <>
+              <Text>{"  "}</Text>
+              <Text color="white">{item.label}</Text>
+              {item.desc && <Text color="gray">{"  "}{item.desc}</Text>}
+            </>
+          )}
+        </Box>
+      ))}
+    </Box>
+  );
+}
+
 export function App({ agent, config }: AppProps) {
   const { exit } = useApp();
   const { stdout } = useStdout();
@@ -229,14 +335,29 @@ export function App({ agent, config }: AppProps) {
   const [mode, setMode] = useState<UIMode>("normal");
   const [selectedIndex, setSelectedIndex] = useState(0);
 
+  // Action menu state
+  const [actionsList, setActionsList] = useState<Action[]>([]);
+  const [selectedAction, setSelectedAction] = useState<Action | null>(null);
+
   // Filtered commands for command-select mode
   const filteredCommands = input.startsWith("/")
     ? SLASH_COMMANDS.filter((cmd) => cmd.name.startsWith(input.toLowerCase()))
     : SLASH_COMMANDS;
 
-  // Determine if we should show command selector
-  const showCommandSelect = mode === "command-select" && !isLoading;
-  const showLanguageSelect = mode === "language-select" && !isLoading;
+  // Determine visible modes
+  const isMenuMode = mode !== "normal" && !isLoading;
+
+  // Menu item counts for each mode
+  function getMenuLength(): number {
+    switch (mode) {
+      case "command-select": return filteredCommands.length;
+      case "language-select": return LANGUAGE_OPTIONS.length;
+      case "action-select": return 2; // create, view all
+      case "action-list": return actionsList.length;
+      case "action-detail": return 3; // run, edit, delete
+      default: return 0;
+    }
+  }
 
   // Reset selected index when filtered list changes
   useEffect(() => {
@@ -246,44 +367,47 @@ export function App({ agent, config }: AppProps) {
   // Handle arrow keys and enter for selection modes
   useInput((ch, key) => {
     if (isLoading) return;
+    if (!isMenuMode) return;
 
-    if (showCommandSelect) {
-      if (key.downArrow) {
-        setSelectedIndex((i) => Math.min(i + 1, filteredCommands.length - 1));
-        return;
-      }
-      if (key.upArrow) {
-        setSelectedIndex((i) => Math.max(i - 1, 0));
-        return;
-      }
-      if (key.escape) {
+    const menuLen = getMenuLength();
+
+    if (key.downArrow) {
+      setSelectedIndex((i) => Math.min(i + 1, menuLen - 1));
+      return;
+    }
+    if (key.upArrow) {
+      setSelectedIndex((i) => Math.max(i - 1, 0));
+      return;
+    }
+    if (key.escape) {
+      // Go back one level
+      if (mode === "action-detail") {
+        setSelectedAction(null);
+        setSelectedIndex(0);
+        setMode("action-list");
+      } else if (mode === "action-list") {
+        setSelectedIndex(0);
+        setMode("action-select");
+      } else {
         setMode("normal");
         setInput("");
-        return;
       }
-      if (key.return) {
-        const cmd = filteredCommands[selectedIndex];
-        if (cmd) {
-          executeCommand(cmd);
-        }
-        return;
-      }
+      return;
     }
+    if (key.return) {
+      handleMenuSelect();
+      return;
+    }
+  });
 
-    if (showLanguageSelect) {
-      if (key.downArrow) {
-        setSelectedIndex((i) => Math.min(i + 1, LANGUAGE_OPTIONS.length - 1));
-        return;
+  function handleMenuSelect() {
+    switch (mode) {
+      case "command-select": {
+        const cmd = filteredCommands[selectedIndex];
+        if (cmd) executeCommand(cmd);
+        break;
       }
-      if (key.upArrow) {
-        setSelectedIndex((i) => Math.max(i - 1, 0));
-        return;
-      }
-      if (key.escape) {
-        setMode("normal");
-        return;
-      }
-      if (key.return) {
+      case "language-select": {
         const option = LANGUAGE_OPTIONS[selectedIndex];
         if (option) {
           const projectConfig = loadProjectConfig();
@@ -294,17 +418,79 @@ export function App({ agent, config }: AppProps) {
           setMode("normal");
           setMessages((prev) => [
             ...prev,
-            {
-              id: nextId(),
-              role: "assistant",
-              text: `Language set to ${option.label}.`,
-            },
+            { id: nextId(), role: "assistant", text: `Language set to ${option.label}.` },
           ]);
         }
-        return;
+        break;
+      }
+      case "action-select": {
+        if (selectedIndex === 0) {
+          // Create new Actions
+          setMode("normal");
+          const label = ACTION_MENU_LABELS.create[currentLang] || ACTION_MENU_LABELS.create.en;
+          setMessages((prev) => [
+            ...prev,
+            { id: nextId(), role: "user", text: label },
+          ]);
+          sendPrompt("I want to create a new automation action. Ask me what task I want to automate, which website URL it targets, and what steps are involved. Then save it with action_save.");
+        } else {
+          // View all Actions → load and show list
+          const actions = listActions();
+          if (actions.length === 0) {
+            const noMsg = ACTION_MENU_LABELS.noActions[currentLang] || ACTION_MENU_LABELS.noActions.en;
+            setMessages((prev) => [
+              ...prev,
+              { id: nextId(), role: "assistant", text: noMsg },
+            ]);
+            setMode("normal");
+          } else {
+            setActionsList(actions);
+            setSelectedIndex(0);
+            setMode("action-list");
+          }
+        }
+        break;
+      }
+      case "action-list": {
+        const action = actionsList[selectedIndex];
+        if (action) {
+          setSelectedAction(action);
+          setSelectedIndex(0);
+          setMode("action-detail");
+        }
+        break;
+      }
+      case "action-detail": {
+        if (!selectedAction) break;
+        setMode("normal");
+        const actionName = selectedAction.name;
+        if (selectedIndex === 0) {
+          // Run
+          setMessages((prev) => [
+            ...prev,
+            { id: nextId(), role: "user", text: `${ACTION_MENU_LABELS.run[currentLang]} → ${actionName}` },
+          ]);
+          sendPrompt(`Run the action "${actionName}" using action_run. If it needs parameters, ask me for them. Then execute it step by step with browser_task.`);
+        } else if (selectedIndex === 1) {
+          // Edit
+          setMessages((prev) => [
+            ...prev,
+            { id: nextId(), role: "user", text: `${ACTION_MENU_LABELS.edit[currentLang]} → ${actionName}` },
+          ]);
+          sendPrompt(`Load the action "${actionName}" using action_run (to see its current definition). Show me its current steps and parameters, then ask me what I want to change. After I confirm the changes, save it with action_save.`);
+        } else {
+          // Delete
+          setMessages((prev) => [
+            ...prev,
+            { id: nextId(), role: "user", text: `${ACTION_MENU_LABELS.delete[currentLang]} → ${actionName}` },
+          ]);
+          sendPrompt(`Delete the action "${actionName}" using action_delete. Confirm what was deleted.`);
+        }
+        setSelectedAction(null);
+        break;
       }
     }
-  });
+  }
 
   // Watch input for slash trigger
   const handleInputChange = useCallback((value: string) => {
@@ -423,16 +609,24 @@ export function App({ agent, config }: AppProps) {
       setInput("");
       setMode("normal");
 
-      // /exit
       if (cmd.name === "/exit") {
         exit();
         return;
       }
 
-      // /language — switch to language select
+      if (cmd.name === "/actions") {
+        setMessages((prev) => [
+          ...prev,
+          { id: nextId(), role: "user", text: cmd.name },
+        ]);
+        setSelectedIndex(0);
+        setMode("action-select");
+        return;
+      }
+
       if (cmd.name === "/language") {
-        const currentLang = loadProjectConfig().language;
-        const currentIdx = LANGUAGE_OPTIONS.findIndex((o) => o.code === currentLang);
+        const lang = loadProjectConfig().language;
+        const currentIdx = LANGUAGE_OPTIONS.findIndex((o) => o.code === lang);
         setMessages((prev) => [
           ...prev,
           { id: nextId(), role: "user", text: cmd.name },
@@ -442,7 +636,6 @@ export function App({ agent, config }: AppProps) {
         return;
       }
 
-      // /open-browser
       if (cmd.name === "/open-browser") {
         setMessages((prev) => [
           ...prev,
@@ -460,7 +653,6 @@ export function App({ agent, config }: AppProps) {
         return;
       }
 
-      // /close-browser
       if (cmd.name === "/close-browser") {
         const closed = await closeBrowser();
         setMessages((prev) => [
@@ -475,7 +667,6 @@ export function App({ agent, config }: AppProps) {
         return;
       }
 
-      // /help
       if (cmd.name === "/help") {
         const helpText = SLASH_COMMANDS.map(
           (c) => `${c.name}  ${c.description[currentLang] || c.description.en}`
@@ -488,7 +679,6 @@ export function App({ agent, config }: AppProps) {
         return;
       }
 
-      // Commands with prompts
       if (cmd.prompt) {
         setMessages((prev) => [
           ...prev,
@@ -497,16 +687,14 @@ export function App({ agent, config }: AppProps) {
         await sendPrompt(cmd.prompt);
       }
     },
-    [exit, sendPrompt, agent]
+    [exit, sendPrompt, agent, currentLang]
   );
 
   const handleSubmit = useCallback(
     async (value: string) => {
       const trimmed = value.trim();
       if (!trimmed) return;
-
-      // If in command-select mode, enter is handled by useInput
-      if (mode === "command-select" || mode === "language-select") return;
+      if (isMenuMode) return;
 
       setInput("");
 
@@ -515,22 +703,89 @@ export function App({ agent, config }: AppProps) {
         return;
       }
 
-      // Check if it's a slash command typed manually
       const cmd = SLASH_COMMANDS.find((c) => c.name === trimmed);
       if (cmd) {
         await executeCommand(cmd);
         return;
       }
 
-      // Regular message
       setMessages((prev) => [
         ...prev,
         { id: nextId(), role: "user", text: trimmed },
       ]);
       await sendPrompt(trimmed);
     },
-    [agent, exit, sendPrompt, executeCommand, mode]
+    [agent, exit, sendPrompt, executeCommand, isMenuMode]
   );
+
+  // Build menu items for current mode
+  function renderMenu() {
+    if (!isMenuMode) return null;
+
+    switch (mode) {
+      case "command-select":
+        if (filteredCommands.length === 0) return null;
+        return (
+          <SelectMenu
+            items={filteredCommands.map((cmd) => ({
+              label: cmd.name,
+              desc: cmd.description[currentLang] || cmd.description.en,
+            }))}
+            selectedIndex={selectedIndex}
+            currentLang={currentLang}
+          />
+        );
+
+      case "language-select":
+        return (
+          <SelectMenu
+            items={LANGUAGE_OPTIONS.map((opt) => ({ label: opt.label }))}
+            selectedIndex={selectedIndex}
+            currentLang={currentLang}
+          />
+        );
+
+      case "action-select":
+        return (
+          <SelectMenu
+            items={[
+              { label: ACTION_MENU_LABELS.create[currentLang] || ACTION_MENU_LABELS.create.en },
+              { label: ACTION_MENU_LABELS.listAll[currentLang] || ACTION_MENU_LABELS.listAll.en },
+            ]}
+            selectedIndex={selectedIndex}
+            currentLang={currentLang}
+          />
+        );
+
+      case "action-list":
+        return (
+          <SelectMenu
+            items={actionsList.map((a) => ({
+              label: a.name,
+              desc: a.description,
+            }))}
+            selectedIndex={selectedIndex}
+            currentLang={currentLang}
+          />
+        );
+
+      case "action-detail":
+        return (
+          <SelectMenu
+            items={[
+              { label: ACTION_MENU_LABELS.run[currentLang] || ACTION_MENU_LABELS.run.en },
+              { label: ACTION_MENU_LABELS.edit[currentLang] || ACTION_MENU_LABELS.edit.en },
+              { label: ACTION_MENU_LABELS.delete[currentLang] || ACTION_MENU_LABELS.delete.en },
+            ]}
+            selectedIndex={selectedIndex}
+            currentLang={currentLang}
+          />
+        );
+
+      default:
+        return null;
+    }
+  }
 
   return (
     <Box flexDirection="column">
@@ -580,8 +835,8 @@ export function App({ agent, config }: AppProps) {
         <Text color={isLoading ? "gray" : "#97DCE2"} bold>
           {"  ❯ "}
         </Text>
-        {mode === "language-select" ? (
-          <Text dimColor>Select language with ↑↓, Enter to confirm, Esc to cancel</Text>
+        {isMenuMode ? (
+          <Text dimColor>↑↓ select, Enter confirm, Esc back</Text>
         ) : (
           <TextInput
             value={input}
@@ -590,57 +845,14 @@ export function App({ agent, config }: AppProps) {
             placeholder={
               isLoading ? "waiting..." : "Type / for commands, or ask anything..."
             }
-            focus={!isLoading && !showLanguageSelect}
+            focus={!isLoading && !isMenuMode}
           />
         )}
       </Box>
       <Separator width={termWidth} />
 
-      {/* Command selector */}
-      {showCommandSelect && filteredCommands.length > 0 && (
-        <Box flexDirection="column">
-          {filteredCommands.map((cmd, i) => (
-            <Box key={cmd.name}>
-              <Text>{"  "}</Text>
-              {i === selectedIndex ? (
-                <>
-                  <Text color="#26AAB9" bold>{"❯ "}</Text>
-                  <Text color="#26AAB9" bold>{cmd.name}</Text>
-                  <Text color="#97DCE2">{"  "}{cmd.description[currentLang] || cmd.description.en}</Text>
-                </>
-              ) : (
-                <>
-                  <Text>{"  "}</Text>
-                  <Text color="white">{cmd.name}</Text>
-                  <Text color="gray">{"  "}{cmd.description[currentLang] || cmd.description.en}</Text>
-                </>
-              )}
-            </Box>
-          ))}
-        </Box>
-      )}
-
-      {/* Language selector */}
-      {showLanguageSelect && (
-        <Box flexDirection="column">
-          {LANGUAGE_OPTIONS.map((opt, i) => (
-            <Box key={opt.code}>
-              <Text>{"  "}</Text>
-              {i === selectedIndex ? (
-                <>
-                  <Text color="#26AAB9" bold>{"❯ "}</Text>
-                  <Text color="#26AAB9" bold>{opt.label}</Text>
-                </>
-              ) : (
-                <>
-                  <Text>{"  "}</Text>
-                  <Text color="white">{opt.label}</Text>
-                </>
-              )}
-            </Box>
-          ))}
-        </Box>
-      )}
+      {/* Dynamic menu */}
+      {renderMenu()}
     </Box>
   );
 }
