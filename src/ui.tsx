@@ -12,6 +12,7 @@ import {
 import { buildSystemPrompt } from "./agent.js";
 import { closeBrowser, openBrowser } from "./tools/browser-task.js";
 import { listActions, type Action } from "./tools/action.js";
+import { loadConfig } from "./config.js";
 
 interface Message {
   id: number;
@@ -114,6 +115,21 @@ const SLASH_COMMANDS: SlashCommand[] = [
       pt: "Fechar navegador",
       ko: "브라우저 닫기",
       ja: "ブラウザを閉じる",
+    },
+    prompt: "",
+  },
+  {
+    name: "/usage",
+    description: {
+      "zh-CN": "查看积分余额",
+      "zh-TW": "查看積分餘額",
+      en: "View credits balance",
+      fr: "Voir le solde de crédits",
+      de: "Guthaben anzeigen",
+      es: "Ver saldo de créditos",
+      pt: "Ver saldo de créditos",
+      ko: "크레딧 잔액 보기",
+      ja: "クレジット残高を表示",
     },
     prompt: "",
   },
@@ -237,7 +253,8 @@ type UIMode =
   | "language-select"
   | "action-select"    // top-level: create / view all
   | "action-list"      // list of saved actions
-  | "action-detail";   // run / edit / delete for a selected action
+  | "action-detail"    // run / edit / delete for a selected action
+  | "usage-display";   // show credits usage
 
 function MessageItem({ msg }: { msg: Message }) {
   switch (msg.role) {
@@ -318,6 +335,40 @@ function SelectMenu({ items, selectedIndex, currentLang }: {
   );
 }
 
+function UsageBar({ used, total, balance, width }: { used: number; total: number; balance: number; width: number }) {
+  const pct = total > 0 ? Math.min(used / total, 1) : 0;
+  const filledLen = Math.round(pct * width);
+  const emptyLen = width - filledLen;
+  const filled = "█".repeat(filledLen);
+  const empty = "░".repeat(emptyLen);
+  const pctStr = (pct * 100).toFixed(1);
+
+  // Color based on usage: green < 50%, yellow 50-80%, red > 80%
+  const barColor = pct > 0.8 ? "red" : pct > 0.5 ? "yellow" : "green";
+
+  return (
+    <Box flexDirection="column">
+      <Box>
+        <Text color={barColor}>{filled}</Text>
+        <Text dimColor>{empty}</Text>
+        <Text> {pctStr}%</Text>
+      </Box>
+      <Box marginTop={1} flexDirection="column">
+        <Text>
+          <Text dimColor>Used:    </Text>
+          <Text bold>{used.toFixed(2)}</Text>
+          <Text dimColor> credits (${(used * 0.01).toFixed(2)})</Text>
+        </Text>
+        <Text>
+          <Text dimColor>Balance: </Text>
+          <Text bold color="green">{balance.toFixed(2)}</Text>
+          <Text dimColor> credits (${(balance * 0.01).toFixed(2)})</Text>
+        </Text>
+      </Box>
+    </Box>
+  );
+}
+
 export function App({ agent, config }: AppProps) {
   const { exit } = useApp();
   const { stdout } = useStdout();
@@ -338,6 +389,9 @@ export function App({ agent, config }: AppProps) {
   // Action menu state
   const [actionsList, setActionsList] = useState<Action[]>([]);
   const [selectedAction, setSelectedAction] = useState<Action | null>(null);
+
+  // Usage display state
+  const [usageData, setUsageData] = useState<{ balance: number; totalCreditsUsed: number; initialBalance: number } | null>(null);
 
   // Filtered commands for command-select mode
   const filteredCommands = input.startsWith("/")
@@ -388,6 +442,10 @@ export function App({ agent, config }: AppProps) {
       } else if (mode === "action-list") {
         setSelectedIndex(0);
         setMode("action-select");
+      } else if (mode === "usage-display") {
+        setUsageData(null);
+        setMode("normal");
+        setInput("");
       } else {
         setMode("normal");
         setInput("");
@@ -495,9 +553,14 @@ export function App({ agent, config }: AppProps) {
   // Watch input for slash trigger
   const handleInputChange = useCallback((value: string) => {
     setInput(value);
-    if (value === "/" && mode === "normal") {
-      setMode("command-select");
-      setSelectedIndex(0);
+    if (value.startsWith("/") && (mode === "normal" || mode === "command-select")) {
+      const matches = SLASH_COMMANDS.filter((cmd) => cmd.name.startsWith(value.toLowerCase()));
+      if (matches.length > 0) {
+        setMode("command-select");
+        setSelectedIndex(0);
+      } else {
+        setMode("normal");
+      }
     } else if (!value.startsWith("/") && mode === "command-select") {
       setMode("normal");
     }
@@ -667,6 +730,42 @@ export function App({ agent, config }: AppProps) {
         return;
       }
 
+      if (cmd.name === "/usage") {
+        setMessages((prev) => [
+          ...prev,
+          { id: nextId(), role: "user", text: cmd.name },
+        ]);
+        // Fetch usage from Worker API
+        const cfg = loadConfig();
+        if (!cfg.proxyUrl || !cfg.vibpageApiKey) {
+          setMessages((prev) => [
+            ...prev,
+            { id: nextId(), role: "status", text: "Usage tracking requires proxy mode. Configure proxyUrl and vibpageApiKey in ~/.vibpage/config.json" },
+          ]);
+          return;
+        }
+        try {
+          const res = await fetch(`${cfg.proxyUrl}/api/usage?days=30`, {
+            headers: { Authorization: `Bearer ${cfg.vibpageApiKey}` },
+          });
+          if (!res.ok) throw new Error(`API error: ${res.status}`);
+          const data = await res.json() as { balance: number; usage: { credits_consumed: number }[] };
+          const totalUsed = (data.usage || []).reduce((sum: number, u: any) => sum + (u.credits_consumed || 0), 0);
+          setUsageData({
+            balance: data.balance,
+            totalCreditsUsed: totalUsed,
+            initialBalance: data.balance + totalUsed,
+          });
+          setMode("usage-display");
+        } catch (err: any) {
+          setMessages((prev) => [
+            ...prev,
+            { id: nextId(), role: "status", text: err.message },
+          ]);
+        }
+        return;
+      }
+
       if (cmd.name === "/help") {
         const helpText = SLASH_COMMANDS.map(
           (c) => `${c.name}  ${c.description[currentLang] || c.description.en}`
@@ -694,6 +793,11 @@ export function App({ agent, config }: AppProps) {
     async (value: string) => {
       const trimmed = value.trim();
       if (!trimmed) return;
+      // In command-select mode, Enter selects the highlighted command
+      if (mode === "command-select") {
+        handleMenuSelect();
+        return;
+      }
       if (isMenuMode) return;
 
       setInput("");
@@ -831,11 +935,12 @@ export function App({ agent, config }: AppProps) {
 
       {/* Input area */}
       <Separator width={termWidth} />
+      {mode === "usage-display" ? null : (
       <Box>
         <Text color={isLoading ? "gray" : "#97DCE2"} bold>
           {"  ❯ "}
         </Text>
-        {isMenuMode ? (
+        {isMenuMode && mode !== "command-select" ? (
           <Text dimColor>↑↓ select, Enter confirm, Esc back</Text>
         ) : (
           <TextInput
@@ -845,14 +950,35 @@ export function App({ agent, config }: AppProps) {
             placeholder={
               isLoading ? "waiting..." : "Type / for commands, or ask anything..."
             }
-            focus={!isLoading && !isMenuMode}
+            focus={!isLoading && (!isMenuMode || mode === "command-select")}
           />
         )}
       </Box>
+      )}
       <Separator width={termWidth} />
 
       {/* Dynamic menu */}
       {renderMenu()}
+
+      {/* Usage display */}
+      {mode === "usage-display" && usageData && (
+        <Box flexDirection="column" paddingLeft={2} paddingRight={2}>
+          <Box marginTop={1}>
+            <Text bold>Credits Usage (30 days)</Text>
+          </Box>
+          <Box marginTop={1}>
+            <UsageBar
+              used={usageData.totalCreditsUsed}
+              total={usageData.initialBalance}
+              balance={usageData.balance}
+              width={Math.min(termWidth - 8, 60)}
+            />
+          </Box>
+          <Box marginTop={1}>
+            <Text dimColor>Esc to cancel</Text>
+          </Box>
+        </Box>
+      )}
     </Box>
   );
 }
