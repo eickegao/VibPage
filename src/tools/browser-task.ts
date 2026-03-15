@@ -3,7 +3,7 @@ import type { AgentTool } from "@mariozechner/pi-agent-core";
 import { homedir } from "os";
 import { join } from "path";
 import { existsSync, readFileSync } from "fs";
-import { extractDom, formatDomSnapshot } from "./dom-extractor.js";
+import { extractDom, formatDomSnapshot, type DomElement } from "./dom-extractor.js";
 import { planDomActions, type DomAction } from "./dom-planner.js";
 import { executeDomActions, formatResults } from "./dom-executor.js";
 
@@ -299,6 +299,95 @@ Start by taking a screenshot to see the current page state.`;
   }
 }
 
+// ========== Single-step vision fallback ==========
+
+function describeActionForVision(action: DomAction, elements: DomElement[]): string {
+  const el = action.element ? elements.find(e => e.index === action.element) : null;
+  const elDesc = el ? `the ${el.tag} element "${el.text}"` : "";
+
+  switch (action.action) {
+    case "click":
+      return `Click on ${elDesc}`;
+    case "fill":
+      return `Type "${action.value}" into ${elDesc}`;
+    case "select":
+      return `Select "${action.value}" from ${elDesc}`;
+    case "keypress":
+      return `Press ${(action.keys || []).join("+")} on the keyboard`;
+    case "scroll":
+      return `Scroll ${action.direction || "down"} on the page`;
+    case "goto":
+      return `Navigate to ${action.url}`;
+    case "wait":
+      return "Wait for the page to load";
+    default:
+      return `Perform action: ${action.action}`;
+  }
+}
+
+const SINGLE_STEP_MAX_TURNS = 10;
+
+async function runSingleVisionStep(
+  page: any,
+  apiConfig: BrowserApiConfig,
+  actionDescription: string,
+  precision: Precision,
+  logs: string[]
+): Promise<boolean> {
+  const prompt = `You are controlling a browser. Perform ONLY this one action:
+
+${actionDescription}
+
+Take a screenshot first to see the current page, then do exactly this one action. Once this single action is done, say "Action completed." and stop. Do NOT do anything beyond this one action.`;
+
+  let response = await callComputerUse(apiConfig, prompt);
+  let turns = 0;
+
+  while (turns < SINGLE_STEP_MAX_TURNS) {
+    turns++;
+
+    const computerCall = response.output?.find(
+      (o: any) => o.type === "computer_call"
+    ) as ComputerCallOutput | undefined;
+
+    if (!computerCall) {
+      // Vision finished this step
+      logs.push(`[vision-step] Completed: ${actionDescription}`);
+      return true;
+    }
+
+    const actionDescs = computerCall.actions.map((a) => {
+      if (a.type === "click") return `click(${a.x},${a.y})`;
+      if (a.type === "type") return `type("${a.text?.slice(0, 30)}...")`;
+      if (a.type === "keypress") return `keypress(${a.keys?.join("+")})`;
+      if (a.type === "scroll") return `scroll(${a.scrollX},${a.scrollY})`;
+      return a.type;
+    });
+    logs.push(`[vision-step] ${actionDescs.join(", ")}`);
+
+    await executeVisionActions(page, computerCall.actions);
+    await new Promise((r) => setTimeout(r, precision === "high" ? 1500 : 800));
+
+    const screenshot = await takeScreenshot(page, precision);
+    response = await callComputerUse(
+      apiConfig,
+      [{
+        type: "computer_call_output",
+        call_id: computerCall.call_id,
+        output: {
+          type: "computer_screenshot",
+          image_url: `data:${screenshotMimeType(precision)};base64,${screenshot}`,
+          detail: screenshotDetail(precision),
+        },
+      }],
+      response.id
+    );
+  }
+
+  logs.push(`[vision-step] Max turns reached for: ${actionDescription}`);
+  return false;
+}
+
 // ========== Hybrid execution loop ==========
 
 async function runHybridMode(
@@ -320,7 +409,7 @@ async function runHybridMode(
     try {
       snapshot = await extractDom(page);
     } catch {
-      logs.push(`[hybrid] Turn ${turns}: DOM extraction failed, switching to vision mode`);
+      logs.push(`[hybrid] Turn ${turns}: DOM extraction failed, falling back to full vision mode`);
       await runVisionMode(page, apiConfig, task, url, precision, logs);
       return;
     }
@@ -329,7 +418,7 @@ async function runHybridMode(
 
     // Check if page has enough interactive elements for DOM mode
     if (snapshot.elements.length === 0) {
-      logs.push(`[hybrid] Turn ${turns}: No interactive elements found, switching to vision mode`);
+      logs.push(`[hybrid] Turn ${turns}: No interactive elements found, falling back to full vision mode`);
       await runVisionMode(page, apiConfig, task, url, precision, logs);
       return;
     }
@@ -343,20 +432,12 @@ async function runHybridMode(
         previousActionLog.length > 0 ? previousActionLog.join("\n") : undefined
       );
     } catch (err) {
-      logs.push(`[hybrid] Turn ${turns}: Planner failed (${(err as Error).message}), switching to vision mode`);
+      logs.push(`[hybrid] Turn ${turns}: Planner failed (${(err as Error).message}), falling back to full vision mode`);
       await runVisionMode(page, apiConfig, task, url, precision, logs);
       return;
     }
 
     logs.push(`[hybrid] Turn ${turns}: ${plan.reasoning}`);
-
-    // Check if planner requests vision mode
-    const needsVision = plan.actions.some((a: DomAction) => a.action === "use_vision");
-    if (needsVision) {
-      logs.push(`[hybrid] Planner requested vision mode`);
-      await runVisionMode(page, apiConfig, task, url, precision, logs);
-      return;
-    }
 
     // Separate done from executable actions
     const doneAction = plan.actions.find((a: DomAction) => a.action === "done");
@@ -370,24 +451,40 @@ async function runHybridMode(
       return;
     }
 
-    // Step 3: Execute DOM actions
-    const results = await executeDomActions(page, executableActions, snapshot.elements);
-    const resultText = formatResults(results);
+    // Step 3: Execute actions one by one — DOM first, vision fallback per action
+    let turnLog: string[] = [];
+    for (const action of executableActions) {
+      const result = await executeDomActions(page, [action], snapshot.elements);
+      const r = result[0];
+
+      if (r.success) {
+        const desc = `${r.action.action}${r.action.element ? ` [${r.action.element}]` : ""}${r.action.value ? ` "${r.action.value}"` : ""}`;
+        turnLog.push(`✓ DOM: ${desc}`);
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      } else {
+        // DOM failed — try this specific action via vision
+        const actionDesc = describeActionForVision(action, snapshot.elements);
+        logs.push(`[hybrid] DOM failed for "${actionDesc}", trying vision...`);
+        const visionOk = await runSingleVisionStep(page, apiConfig, actionDesc, precision, logs);
+        if (visionOk) {
+          turnLog.push(`✓ Vision: ${actionDesc}`);
+        } else {
+          turnLog.push(`✗ Vision failed: ${actionDesc}`);
+          logs.push(`[hybrid] Both DOM and vision failed for: ${actionDesc}`);
+        }
+        // After vision step, DOM snapshot is stale — break and re-plan
+        break;
+      }
+    }
+
+    const resultText = turnLog.join("\n");
     logs.push(resultText);
     previousActionLog.push(`Turn ${turns}: ${resultText}`);
 
-    // Check if any action failed — fall back to vision
-    const failed = results.find(r => !r.success);
-    if (failed) {
-      logs.push(`[hybrid] DOM action failed, switching to vision mode`);
-      await runVisionMode(page, apiConfig, task, url, precision, logs);
-      return;
-    }
-
-    // Wait for page to settle after actions
+    // Wait for page to settle
     await new Promise((r) => setTimeout(r, 1000));
 
-    // If planner also included "done", task is complete after executing actions
+    // If planner included "done", task is complete after executing actions
     if (doneAction) {
       logs.push(`[hybrid] Task completed: ${doneAction.message || "done"}`);
       return;
