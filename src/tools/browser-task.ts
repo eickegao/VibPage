@@ -8,8 +8,7 @@ type Precision = "high" | "normal";
 
 const VIEWPORT_HIGH = { width: 1280, height: 800 };
 const VIEWPORT_NORMAL = { width: 1024, height: 768 };
-const MAX_TURNS_HIGH = 50;
-const MAX_TURNS_NORMAL = 25;
+const MAX_TURNS = 50;
 
 // Track open browser so it can be closed via closeBrowser()
 let openContext: any = null;
@@ -230,7 +229,7 @@ export const browserTaskTool: AgentTool<typeof browserTaskParams> = {
 
     const precision: Precision = params.precision || "normal";
     const viewport = precision === "high" ? VIEWPORT_HIGH : VIEWPORT_NORMAL;
-    const maxTurns = precision === "high" ? MAX_TURNS_HIGH : MAX_TURNS_NORMAL;
+    const maxTurns = MAX_TURNS;
 
     const userDataDir = join(homedir(), ".vibpage", "browser-data");
 
