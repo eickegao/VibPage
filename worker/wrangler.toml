@@ -6,3 +6,12 @@ compatibility_date = "2025-03-13"
 binding = "DB"
 database_name = "vibpage"
 database_id = "ae1ded6f-2a93-4762-9d9c-851e80efdae3"
+
+[durable_objects]
+bindings = [
+  { name = "REMOTE_SESSION", class_name = "RemoteSession" }
+]
+
+[[migrations]]
+tag = "v1"
+new_classes = ["RemoteSession"]
