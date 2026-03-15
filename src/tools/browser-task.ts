@@ -3,8 +3,12 @@ import type { AgentTool } from "@mariozechner/pi-agent-core";
 import { homedir } from "os";
 import { join } from "path";
 import { existsSync, readFileSync } from "fs";
+import { extractDom, formatDomSnapshot } from "./dom-extractor.js";
+import { planDomActions, type DomAction } from "./dom-planner.js";
+import { executeDomActions, formatResults } from "./dom-executor.js";
 
 type Precision = "high" | "normal";
+type Mode = "hybrid" | "vision";
 
 const VIEWPORT_HIGH = { width: 1280, height: 800 };
 const VIEWPORT_NORMAL = { width: 1024, height: 768 };
@@ -56,6 +60,8 @@ export async function openBrowser(url?: string): Promise<boolean> {
   return true;
 }
 
+// ========== Computer Use (Vision mode) ==========
+
 interface ComputerAction {
   type: string;
   x?: number;
@@ -76,7 +82,7 @@ interface ComputerCallOutput {
 
 interface BrowserApiConfig {
   apiKey: string;
-  endpoint: string; // Full URL for Computer Use API
+  endpoint: string;
 }
 
 function getBrowserApiConfig(): BrowserApiConfig {
@@ -86,7 +92,6 @@ function getBrowserApiConfig(): BrowserApiConfig {
     config = JSON.parse(readFileSync(configPath, "utf-8"));
   }
 
-  // Proxy mode: route through VibPage worker
   if (config.proxyUrl && config.vibpageApiKey) {
     return {
       apiKey: config.vibpageApiKey,
@@ -94,12 +99,8 @@ function getBrowserApiConfig(): BrowserApiConfig {
     };
   }
 
-  // Direct mode
   const apiKey = process.env.OPENAI_API_KEY || config.apiKey || "";
-  return {
-    apiKey,
-    endpoint: "https://api.openai.com/v1/responses",
-  };
+  return { apiKey, endpoint: "https://api.openai.com/v1/responses" };
 }
 
 async function callComputerUse(
@@ -133,26 +134,20 @@ async function callComputerUse(
   return res.json();
 }
 
-async function executeActions(page: any, actions: ComputerAction[]): Promise<void> {
+async function executeVisionActions(page: any, actions: ComputerAction[]): Promise<void> {
   for (const action of actions) {
     switch (action.type) {
       case "click":
-        await page.mouse.click(action.x!, action.y!, {
-          button: action.button || "left",
-        });
+        await page.mouse.click(action.x!, action.y!, { button: action.button || "left" });
         break;
       case "double_click":
-        await page.mouse.dblclick(action.x!, action.y!, {
-          button: action.button || "left",
-        });
+        await page.mouse.dblclick(action.x!, action.y!, { button: action.button || "left" });
         break;
       case "type":
         await page.keyboard.type(action.text!, { delay: 30 });
         break;
       case "keypress":
-        for (const key of action.keys || []) {
-          await page.keyboard.press(key);
-        }
+        for (const key of action.keys || []) await page.keyboard.press(key);
         break;
       case "scroll":
         await page.mouse.move(action.x!, action.y!);
@@ -161,10 +156,8 @@ async function executeActions(page: any, actions: ComputerAction[]): Promise<voi
       case "drag":
         await page.mouse.move(action.x!, action.y!);
         await page.mouse.down();
-        const dragAction = action as any;
-        if (dragAction.toX !== undefined && dragAction.toY !== undefined) {
-          await page.mouse.move(dragAction.toX, dragAction.toY);
-        }
+        const da = action as any;
+        if (da.toX !== undefined && da.toY !== undefined) await page.mouse.move(da.toX, da.toY);
         await page.mouse.up();
         break;
       case "move":
@@ -185,7 +178,6 @@ async function takeScreenshot(page: any, precision: Precision): Promise<string> 
     const buffer = await page.screenshot({ type: "png" });
     return buffer.toString("base64");
   }
-  // Normal mode: JPEG with quality 60 for smaller size / fewer tokens
   const buffer = await page.screenshot({ type: "jpeg", quality: 60 });
   return buffer.toString("base64");
 }
@@ -198,6 +190,206 @@ function screenshotDetail(precision: Precision): string {
   return precision === "high" ? "high" : "auto";
 }
 
+// ========== Vision-only execution loop ==========
+
+async function runVisionMode(
+  page: any,
+  apiConfig: BrowserApiConfig,
+  task: string,
+  url: string,
+  precision: Precision,
+  logs: string[]
+): Promise<void> {
+  const taskPrompt = `You are controlling a browser to complete a task.
+
+URL: ${url}
+Task: ${task}
+
+Instructions:
+1. First take a screenshot to see the current state of the page
+2. If the site requires login and you're not logged in, tell me and KEEP taking screenshots to wait for the user to log in manually. Do NOT stop.
+3. Once ready, perform the necessary actions (click, type, scroll, etc.) to complete the task
+4. Take a final screenshot to confirm the task is done
+5. Report what you accomplished
+
+IMPORTANT: Do NOT stop early. Keep going until the task is fully completed.
+
+Start by taking a screenshot to see the current page state.`;
+
+  let response = await callComputerUse(apiConfig, taskPrompt);
+  let turns = 0;
+
+  while (turns < MAX_TURNS) {
+    turns++;
+
+    const computerCall = response.output?.find(
+      (o: any) => o.type === "computer_call"
+    ) as ComputerCallOutput | undefined;
+
+    if (!computerCall) {
+      let aiText = "";
+      for (const o of response.output || []) {
+        if (o.type === "text" && (o as any).text) aiText = (o as any).text;
+        else if (o.type === "message" && (o as any).content) {
+          for (const c of (o as any).content) {
+            if (c.type === "text") aiText = c.text;
+          }
+        }
+      }
+      if (aiText) logs.push(`AI: ${aiText}`);
+
+      const lower = aiText.toLowerCase();
+      const isDone = ["completed", "successfully", "complete", "done", "finished", "posted", "published", "submitted"]
+        .some(w => lower.includes(w));
+
+      if (isDone) {
+        logs.push("Task completed.");
+        break;
+      }
+
+      logs.push("Continuing...");
+      await new Promise((r) => setTimeout(r, 3000));
+      const screenshot = await takeScreenshot(page, precision);
+      response = await callComputerUse(
+        apiConfig,
+        [{
+          type: "computer_call_output",
+          call_id: "continue",
+          output: {
+            type: "computer_screenshot",
+            image_url: `data:${screenshotMimeType(precision)};base64,${screenshot}`,
+            detail: screenshotDetail(precision),
+          },
+        }],
+        response.id
+      );
+      continue;
+    }
+
+    const actionDescs = computerCall.actions.map((a) => {
+      if (a.type === "click") return `click(${a.x},${a.y})`;
+      if (a.type === "type") return `type("${a.text?.slice(0, 30)}...")`;
+      if (a.type === "keypress") return `keypress(${a.keys?.join("+")})`;
+      if (a.type === "scroll") return `scroll(${a.scrollX},${a.scrollY})`;
+      return a.type;
+    });
+    logs.push(`[vision] Turn ${turns}: ${actionDescs.join(", ")}`);
+
+    await executeVisionActions(page, computerCall.actions);
+    await new Promise((r) => setTimeout(r, precision === "high" ? 1500 : 800));
+
+    const screenshot = await takeScreenshot(page, precision);
+    response = await callComputerUse(
+      apiConfig,
+      [{
+        type: "computer_call_output",
+        call_id: computerCall.call_id,
+        output: {
+          type: "computer_screenshot",
+          image_url: `data:${screenshotMimeType(precision)};base64,${screenshot}`,
+          detail: screenshotDetail(precision),
+        },
+      }],
+      response.id
+    );
+  }
+
+  if (turns >= MAX_TURNS) {
+    logs.push("Reached maximum turns limit.");
+  }
+}
+
+// ========== Hybrid execution loop ==========
+
+async function runHybridMode(
+  page: any,
+  apiConfig: BrowserApiConfig,
+  task: string,
+  url: string,
+  precision: Precision,
+  logs: string[]
+): Promise<void> {
+  let turns = 0;
+  let previousActionLog: string[] = [];
+
+  while (turns < MAX_TURNS) {
+    turns++;
+
+    // Step 1: Extract DOM snapshot
+    let snapshot;
+    try {
+      snapshot = await extractDom(page);
+    } catch {
+      logs.push(`[hybrid] Turn ${turns}: DOM extraction failed, switching to vision mode`);
+      await runVisionMode(page, apiConfig, task, url, precision, logs);
+      return;
+    }
+
+    const domText = formatDomSnapshot(snapshot);
+
+    // Check if page has enough interactive elements for DOM mode
+    if (snapshot.elements.length === 0) {
+      logs.push(`[hybrid] Turn ${turns}: No interactive elements found, switching to vision mode`);
+      await runVisionMode(page, apiConfig, task, url, precision, logs);
+      return;
+    }
+
+    // Step 2: Ask cheap LLM to plan actions
+    let plan;
+    try {
+      plan = await planDomActions(
+        task,
+        domText,
+        previousActionLog.length > 0 ? previousActionLog.join("\n") : undefined
+      );
+    } catch (err) {
+      logs.push(`[hybrid] Turn ${turns}: Planner failed (${(err as Error).message}), switching to vision mode`);
+      await runVisionMode(page, apiConfig, task, url, precision, logs);
+      return;
+    }
+
+    logs.push(`[hybrid] Turn ${turns}: ${plan.reasoning}`);
+
+    // Check if planner requests vision mode
+    const needsVision = plan.actions.some((a: DomAction) => a.action === "use_vision");
+    if (needsVision) {
+      logs.push(`[hybrid] Planner requested vision mode`);
+      await runVisionMode(page, apiConfig, task, url, precision, logs);
+      return;
+    }
+
+    // Check if task is done
+    const doneAction = plan.actions.find((a: DomAction) => a.action === "done");
+    if (doneAction) {
+      logs.push(`[hybrid] Task completed: ${doneAction.message || "done"}`);
+      return;
+    }
+
+    // Step 3: Execute DOM actions
+    const results = await executeDomActions(page, plan.actions, snapshot.elements);
+    const resultText = formatResults(results);
+    logs.push(resultText);
+    previousActionLog.push(`Turn ${turns}: ${resultText}`);
+
+    // Check if any action failed — fall back to vision
+    const failed = results.find(r => !r.success);
+    if (failed) {
+      logs.push(`[hybrid] DOM action failed, switching to vision mode`);
+      await runVisionMode(page, apiConfig, task, url, precision, logs);
+      return;
+    }
+
+    // Wait for page to settle after actions
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+
+  if (turns >= MAX_TURNS) {
+    logs.push("Reached maximum turns limit.");
+  }
+}
+
+// ========== Tool definition ==========
+
 const browserTaskParams = Type.Object({
   url: Type.String({
     description: "Target URL to open in the browser",
@@ -205,10 +397,16 @@ const browserTaskParams = Type.Object({
   task: Type.String({
     description: "Natural language description of what to do on this page",
   }),
+  mode: Type.Optional(
+    Type.Union([Type.Literal("hybrid"), Type.Literal("vision")], {
+      description:
+        'Execution mode. "hybrid" (default) = uses DOM analysis with cheap LLM first, falls back to Computer Use vision only when needed. Saves ~80% tokens. "vision" = pure Computer Use with screenshots every turn (original mode, more reliable for complex visual tasks).',
+    })
+  ),
   precision: Type.Optional(
     Type.Union([Type.Literal("high"), Type.Literal("normal")], {
       description:
-        'Precision mode. "high" = full resolution PNG screenshots every turn (more accurate, costs more tokens). "normal" = compressed JPEG with optimized screenshot frequency (recommended for most tasks). Default: "normal"',
+        'Precision for vision mode screenshots. "high" = full PNG. "normal" (default) = compressed JPEG. Only applies to vision mode.',
     })
   ),
 });
@@ -217,7 +415,7 @@ export const browserTaskTool: AgentTool<typeof browserTaskParams> = {
   name: "browser_task",
   label: "Browser Task",
   description:
-    "Execute any task in a browser using AI vision and automation. Opens a visible browser, navigates to the URL, and uses AI to understand the page and perform actions (click, type, scroll, etc.) to complete the task. The browser preserves login sessions across runs. Examples: fill forms, post to social media, download reports, interact with any website.",
+    "Execute any task in a browser using AI automation. Two modes: 'hybrid' (default, cheaper) analyzes the page DOM first and uses Playwright for actions, falling back to AI vision only when needed. 'vision' mode uses Computer Use with screenshots for every action (more reliable for complex visual tasks). The browser preserves login sessions across runs.",
   parameters: browserTaskParams,
   execute: async (_toolCallId, params) => {
     const apiConfig = getBrowserApiConfig();
@@ -227,9 +425,9 @@ export const browserTaskTool: AgentTool<typeof browserTaskParams> = {
       );
     }
 
+    const mode: Mode = params.mode || "hybrid";
     const precision: Precision = params.precision || "normal";
     const viewport = precision === "high" ? VIEWPORT_HIGH : VIEWPORT_NORMAL;
-    const maxTurns = MAX_TURNS;
 
     const userDataDir = join(homedir(), ".vibpage", "browser-data");
 
@@ -238,12 +436,9 @@ export const browserTaskTool: AgentTool<typeof browserTaskParams> = {
       const pw = await import("playwright");
       chromium = pw.chromium;
     } catch {
-      throw new Error(
-        "Playwright not available. Run: npx playwright install chromium"
-      );
+      throw new Error("Playwright not available. Run: npx playwright install chromium");
     }
 
-    // Close any previously open browser
     if (openContext) {
       await openContext.close();
       openContext = null;
@@ -262,117 +457,13 @@ export const browserTaskTool: AgentTool<typeof browserTaskParams> = {
       await page.goto(params.url, { waitUntil: "domcontentloaded", timeout: 30000 });
       await new Promise((r) => setTimeout(r, 3000));
 
-      const taskPrompt = `You are controlling a browser to complete a task.
-
-URL: ${params.url}
-Task: ${params.task}
-
-Instructions:
-1. First take a screenshot to see the current state of the page
-2. If the site requires login and you're not logged in, tell me and KEEP taking screenshots to wait for the user to log in manually. Do NOT stop.
-3. Once ready, perform the necessary actions (click, type, scroll, etc.) to complete the task
-4. Take a final screenshot to confirm the task is done
-5. Report what you accomplished
-
-IMPORTANT: Do NOT stop early. Keep going until the task is fully completed. If waiting for user action, keep monitoring with screenshots.
-
-Start by taking a screenshot to see the current page state.`;
-
-      let response = await callComputerUse(apiConfig, taskPrompt);
-      let turns = 0;
-      logs.push(`Started: ${params.task} [${precision} precision]`);
+      logs.push(`Started: ${params.task} [mode: ${mode}, precision: ${precision}]`);
       logs.push(`URL: ${params.url}`);
 
-      while (turns < maxTurns) {
-        turns++;
-
-        const computerCall = response.output?.find(
-          (o: any) => o.type === "computer_call"
-        ) as ComputerCallOutput | undefined;
-
-        if (!computerCall) {
-          let aiText = "";
-          for (const o of response.output || []) {
-            if (o.type === "text" && (o as any).text) {
-              aiText = (o as any).text;
-            } else if (o.type === "message" && (o as any).content) {
-              for (const c of (o as any).content) {
-                if (c.type === "text") aiText = c.text;
-              }
-            }
-          }
-          if (aiText) logs.push(`AI: ${aiText}`);
-
-          const lowerText = aiText.toLowerCase();
-          const isDone = lowerText.includes("completed") ||
-            lowerText.includes("successfully") ||
-            lowerText.includes("complete") ||
-            lowerText.includes("done") ||
-            lowerText.includes("finished") ||
-            lowerText.includes("posted") ||
-            lowerText.includes("published") ||
-            lowerText.includes("submitted");
-
-          if (isDone) {
-            logs.push("Task completed.");
-            break;
-          }
-
-          logs.push("Continuing...");
-          await new Promise((r) => setTimeout(r, 3000));
-          const screenshot = await takeScreenshot(page, precision);
-          response = await callComputerUse(
-            apiConfig,
-            [
-              {
-                type: "computer_call_output",
-                call_id: "continue",
-                output: {
-                  type: "computer_screenshot",
-                  image_url: `data:${screenshotMimeType(precision)};base64,${screenshot}`,
-                  detail: screenshotDetail(precision),
-                },
-              },
-            ],
-            response.id
-          );
-          continue;
-        }
-
-        const actionDescs = computerCall.actions.map((a) => {
-          if (a.type === "click") return `click(${a.x},${a.y})`;
-          if (a.type === "type") return `type("${a.text?.slice(0, 30)}...")`;
-          if (a.type === "keypress") return `keypress(${a.keys?.join("+")})`;
-          if (a.type === "scroll") return `scroll(${a.scrollX},${a.scrollY})`;
-          return a.type;
-        });
-        logs.push(`Turn ${turns}: ${actionDescs.join(", ")}`);
-
-        await executeActions(page, computerCall.actions);
-
-        // Normal mode: shorter wait between actions
-        await new Promise((r) => setTimeout(r, precision === "high" ? 1500 : 800));
-
-        const screenshot = await takeScreenshot(page, precision);
-        response = await callComputerUse(
-          apiConfig,
-          [
-            {
-              type: "computer_call_output",
-              call_id: computerCall.call_id,
-              output: {
-                type: "computer_screenshot",
-                image_url: `data:${screenshotMimeType(precision)};base64,${screenshot}`,
-                detail: screenshotDetail(precision),
-              },
-            },
-          ],
-          response.id
-        );
-      }
-
-      if (turns >= maxTurns) {
-        logs.push("Reached maximum turns limit.");
+      if (mode === "vision") {
+        await runVisionMode(page, apiConfig, params.task, params.url, precision, logs);
+      } else {
+        await runHybridMode(page, apiConfig, params.task, params.url, precision, logs);
       }
 
       return {
