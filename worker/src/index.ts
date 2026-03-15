@@ -1,8 +1,16 @@
+import { createRemoteJWKSet, jwtVerify } from "jose";
+import Stripe from "stripe";
+
 export interface Env {
   DB: D1Database;
   OPENAI_API_KEY: string;
   ANTHROPIC_API_KEY: string;
   GOOGLE_API_KEY: string;
+  CLERK_PUBLISHABLE_KEY: string;
+  CLERK_SECRET_KEY: string;
+  CLERK_JWKS_URL: string;
+  STRIPE_SECRET_KEY: string;
+  STRIPE_WEBHOOK_SECRET: string;
 }
 
 interface User {
@@ -10,16 +18,99 @@ interface User {
   api_key: string;
   email: string | null;
   balance: number;
+  clerk_user_id: string | null;
+  plan: string;
+  stripe_customer_id: string | null;
+  stripe_subscription_id: string | null;
 }
+
+// --- Plan config ---
+
+interface PlanConfig {
+  credits: number;
+  stripePriceIdMonthly?: string;
+  stripePriceIdYearly?: string;
+}
+
+const PLANS: Record<string, PlanConfig> = {
+  "pay-as-you-go": { credits: 0 },
+  hobby: { credits: 3000 },
+  pro: { credits: 10000 },
+  max: { credits: 20000 },
+};
 
 // --- Auth ---
 
-async function authenticateUser(request: Request, db: D1Database): Promise<User | null> {
+let jwks: ReturnType<typeof createRemoteJWKSet> | null = null;
+
+function getJWKS(env: Env) {
+  if (!jwks) {
+    const url = env.CLERK_JWKS_URL || "https://clerk.vibpage.com/.well-known/jwks.json";
+    jwks = createRemoteJWKSet(new URL(url));
+  }
+  return jwks;
+}
+
+async function authenticateUserByJWT(request: Request, env: Env): Promise<User | null> {
+  const auth = request.headers.get("Authorization");
+  if (!auth?.startsWith("Bearer ")) return null;
+  const token = auth.slice(7);
+
+  try {
+    const { payload } = await jwtVerify(token, getJWKS(env));
+    const clerkUserId = payload.sub;
+    if (!clerkUserId) return null;
+
+    // Look up existing user by clerk_user_id
+    let user = await env.DB.prepare("SELECT * FROM users WHERE clerk_user_id = ?")
+      .bind(clerkUserId)
+      .first<User>();
+
+    if (!user) {
+      // Auto-create user on first login — fetch email from Clerk API
+      let email: string | null = null;
+      try {
+        const clerkRes = await fetch(`https://api.clerk.com/v1/users/${clerkUserId}`, {
+          headers: { Authorization: `Bearer ${env.CLERK_SECRET_KEY}` },
+        });
+        if (clerkRes.ok) {
+          const clerkUser = await clerkRes.json() as Record<string, any>;
+          const primary = clerkUser.email_addresses?.find(
+            (e: any) => e.id === clerkUser.primary_email_address_id
+          );
+          email = primary?.email_address || null;
+        }
+      } catch { /* ignore, email stays null */ }
+
+      const apiKey = crypto.randomUUID();
+      await env.DB.prepare(
+        "INSERT INTO users (api_key, email, balance, clerk_user_id, plan) VALUES (?, ?, 0, ?, 'free')"
+      ).bind(apiKey, email, clerkUserId).run();
+
+      user = await env.DB.prepare("SELECT * FROM users WHERE clerk_user_id = ?")
+        .bind(clerkUserId)
+        .first<User>();
+    }
+
+    return user || null;
+  } catch {
+    return null;
+  }
+}
+
+async function authenticateUserByApiKey(request: Request, db: D1Database): Promise<User | null> {
   const auth = request.headers.get("Authorization");
   if (!auth?.startsWith("Bearer ")) return null;
   const apiKey = auth.slice(7);
   const user = await db.prepare("SELECT * FROM users WHERE api_key = ?").bind(apiKey).first<User>();
   return user || null;
+}
+
+async function authenticateUser(request: Request, env: Env): Promise<User | null> {
+  // Try JWT first, then fall back to API key
+  const user = await authenticateUserByJWT(request, env);
+  if (user) return user;
+  return authenticateUserByApiKey(request, env.DB);
 }
 
 // --- Credits pricing ---
@@ -315,6 +406,7 @@ async function handleUsage(request: Request, env: Env, user: User): Promise<Resp
 
   return jsonResponse({
     balance: user.balance,
+    plan: user.plan,
     usage: stats.results,
   });
 }
@@ -325,6 +417,116 @@ async function handleMe(_request: Request, _env: Env, user: User): Promise<Respo
   return jsonResponse({
     id: user.id,
     email: user.email,
+    balance: user.balance,
+    plan: user.plan,
+  });
+}
+
+// --- Route: POST /api/checkout ---
+
+async function handleCheckout(request: Request, env: Env, user: User): Promise<Response> {
+  const body = await request.json() as { plan: string; period?: string };
+  const planName = body.plan?.toLowerCase();
+  const period = body.period || "monthly";
+
+  if (!planName || !PLANS[planName]) {
+    return errorResponse("Invalid plan", 400);
+  }
+
+  const stripe = new Stripe(env.STRIPE_SECRET_KEY);
+
+  // Create or reuse Stripe customer
+  let customerId = user.stripe_customer_id;
+  if (!customerId) {
+    const customer = await stripe.customers.create({
+      email: user.email || undefined,
+      metadata: { clerk_user_id: user.clerk_user_id || "", vibpage_user_id: String(user.id) },
+    });
+    customerId = customer.id;
+    await env.DB.prepare("UPDATE users SET stripe_customer_id = ? WHERE id = ?")
+      .bind(customerId, user.id).run();
+  }
+
+  // Look up price from Stripe by plan name + period
+  // Prices should be created in Stripe dashboard with metadata: plan=xxx, period=monthly|yearly
+  const prices = await stripe.prices.search({
+    query: `metadata["plan"]:"${planName}" metadata["period"]:"${period}" active:"true"`,
+  });
+
+  if (!prices.data.length) {
+    return errorResponse(`No Stripe price found for plan: ${planName} (${period})`, 404);
+  }
+
+  const session = await stripe.checkout.sessions.create({
+    customer: customerId,
+    mode: "subscription",
+    line_items: [{ price: prices.data[0].id, quantity: 1 }],
+    success_url: "https://vibpage.pages.dev/checkout/success",
+    cancel_url: "https://vibpage.pages.dev/checkout/cancel",
+    metadata: {
+      clerk_user_id: user.clerk_user_id || "",
+      vibpage_user_id: String(user.id),
+      plan: planName,
+    },
+  });
+
+  return jsonResponse({ url: session.url });
+}
+
+// --- Route: POST /api/webhook/stripe ---
+
+async function handleStripeWebhook(request: Request, env: Env): Promise<Response> {
+  const stripe = new Stripe(env.STRIPE_SECRET_KEY);
+  const body = await request.text();
+  const sig = request.headers.get("stripe-signature");
+
+  if (!sig) return errorResponse("Missing signature", 400);
+
+  let event: Stripe.Event;
+  try {
+    event = await stripe.webhooks.constructEventAsync(body, sig, env.STRIPE_WEBHOOK_SECRET);
+  } catch {
+    return errorResponse("Invalid signature", 400);
+  }
+
+  if (event.type === "checkout.session.completed") {
+    const session = event.data.object as Stripe.Checkout.Session;
+    const userId = parseInt(session.metadata?.vibpage_user_id || "0");
+    const plan = session.metadata?.plan || "free";
+    const subscriptionId = session.subscription as string;
+
+    if (userId && plan && PLANS[plan]) {
+      await env.DB.prepare(
+        "UPDATE users SET plan = ?, stripe_subscription_id = ?, balance = balance + ?, updated_at = datetime('now') WHERE id = ?"
+      ).bind(plan, subscriptionId, PLANS[plan].credits, userId).run();
+    }
+  }
+
+  if (event.type === "customer.subscription.deleted") {
+    const sub = event.data.object as Stripe.Subscription;
+    const customer = await stripe.customers.retrieve(sub.customer as string) as Stripe.Customer;
+    const userId = customer.metadata?.vibpage_user_id;
+    if (userId) {
+      await env.DB.prepare(
+        "UPDATE users SET plan = 'free', stripe_subscription_id = NULL, updated_at = datetime('now') WHERE id = ?"
+      ).bind(parseInt(userId)).run();
+    }
+  }
+
+  return jsonResponse({ received: true });
+}
+
+// --- Route: POST /api/auth/token ---
+// Exchange Clerk session token for a long-lived API token (for CLI)
+
+async function handleAuthToken(request: Request, env: Env): Promise<Response> {
+  const user = await authenticateUserByJWT(request, env);
+  if (!user) return errorResponse("Invalid token", 401);
+
+  return jsonResponse({
+    api_key: user.api_key,
+    email: user.email,
+    plan: user.plan,
     balance: user.balance,
   });
 }
@@ -345,13 +547,23 @@ export default {
       return jsonResponse({ status: "ok", service: "vibpage-api" });
     }
 
-    // All other routes require auth
-    const user = await authenticateUser(request, env.DB);
-    if (!user) {
-      return errorResponse("Invalid or missing API key", 401);
+    // Stripe webhook (no auth — verified by signature)
+    if (path === "/api/webhook/stripe" && request.method === "POST") {
+      return handleStripeWebhook(request, env);
     }
 
-    // Check balance (allow checking usage/me even with 0 balance)
+    // Auth token exchange (JWT → API key, for CLI login)
+    if (path === "/api/auth/token" && request.method === "POST") {
+      return handleAuthToken(request, env);
+    }
+
+    // All other routes require auth
+    const user = await authenticateUser(request, env);
+    if (!user) {
+      return errorResponse("Invalid or missing credentials", 401);
+    }
+
+    // Check balance (allow checking usage/me/checkout even with 0 balance)
     if (user.balance <= 0 && !path.startsWith("/api/")) {
       return errorResponse("Insufficient balance. Please top up your account.", 402);
     }
@@ -368,6 +580,9 @@ export default {
     }
     if (path === "/api/me" && request.method === "GET") {
       return handleMe(request, env, user);
+    }
+    if (path === "/api/checkout" && request.method === "POST") {
+      return handleCheckout(request, env, user);
     }
 
     return errorResponse("Not found", 404);
