@@ -149,6 +149,21 @@ const SLASH_COMMANDS: SlashCommand[] = [
     prompt: "",
   },
   {
+    name: "/logout",
+    description: {
+      "zh-CN": "登出并退出",
+      "zh-TW": "登出並退出",
+      en: "Sign out and quit",
+      fr: "Se déconnecter et quitter",
+      de: "Abmelden und beenden",
+      es: "Cerrar sesión y salir",
+      pt: "Sair da conta e encerrar",
+      ko: "로그아웃 후 종료",
+      ja: "サインアウトして終了",
+    },
+    prompt: "",
+  },
+  {
     name: "/exit",
     description: {
       "zh-CN": "退出 VibPage",
@@ -703,6 +718,16 @@ export function App({ agent, config }: AppProps) {
     async (cmd: SlashCommand) => {
       setInput("");
       setMode("normal");
+
+      if (cmd.name === "/logout") {
+        const { loadConfig, saveConfig } = await import("./config.js");
+        const cfg = loadConfig();
+        cfg.vibpageApiKey = "";
+        cfg.proxyUrl = "";
+        saveConfig(cfg);
+        exit();
+        return;
+      }
 
       if (cmd.name === "/exit") {
         exit();
