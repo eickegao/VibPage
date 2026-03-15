@@ -73,60 +73,78 @@ const BANNER_LINES = [
   "   ╚═══╝   ╚═╝ ╚═════╝  ╚═╝      ╚═╝  ╚═╝  ╚═════╝  ╚══════╝",
 ];
 
-const LOGIN_TEXTS: Record<Language, { notSignedIn: string; signInNow: string; loginFailed: string; continueWithout: string }> = {
+const LOGIN_TEXTS: Record<Language, { welcome: string; requireLogin: string; signInNow: string; loginFailed: string; continueWithout: string; openingBrowser: string }> = {
   "zh-CN": {
-    notSignedIn: "您尚未登录 VibPage。",
-    signInNow: "现在登录？(Y/n) ",
+    welcome: "欢迎使用 VibPage！",
+    requireLogin: "使用 VibPage 需要登录账户。登录后即可使用 AI 自动化浏览器操作。",
+    signInNow: "是否现在登录？(Y/n) ",
     loginFailed: "登录失败：",
-    continueWithout: "未登录继续使用，部分功能可能受限。",
+    continueWithout: "跳过登录。部分功能将不可用。",
+    openingBrowser: "正在打开浏览器进行登录...",
   },
   "zh-TW": {
-    notSignedIn: "您尚未登入 VibPage。",
-    signInNow: "現在登入？(Y/n) ",
+    welcome: "歡迎使用 VibPage！",
+    requireLogin: "使用 VibPage 需要登入帳戶。登入後即可使用 AI 自動化瀏覽器操作。",
+    signInNow: "是否現在登入？(Y/n) ",
     loginFailed: "登入失敗：",
-    continueWithout: "未登入繼續使用，部分功能可能受限。",
+    continueWithout: "跳過登入。部分功能將不可用。",
+    openingBrowser: "正在開啟瀏覽器進行登入...",
   },
   en: {
-    notSignedIn: "You are not signed in to VibPage.",
+    welcome: "Welcome to VibPage!",
+    requireLogin: "Sign in to your account to get started. Once logged in, you can automate any browser task with AI.",
     signInNow: "Sign in now? (Y/n) ",
     loginFailed: "Login failed: ",
-    continueWithout: "Continuing without login. Some features may be limited.",
+    continueWithout: "Skipped login. Some features will be unavailable.",
+    openingBrowser: "Opening browser for sign-in...",
   },
   fr: {
-    notSignedIn: "Vous n'êtes pas connecté à VibPage.",
+    welcome: "Bienvenue sur VibPage !",
+    requireLogin: "Connectez-vous pour commencer. Une fois connecté, vous pourrez automatiser toute tâche navigateur avec l'IA.",
     signInNow: "Se connecter maintenant ? (O/n) ",
     loginFailed: "Échec de la connexion : ",
-    continueWithout: "Continuation sans connexion. Certaines fonctionnalités peuvent être limitées.",
+    continueWithout: "Connexion ignorée. Certaines fonctionnalités seront indisponibles.",
+    openingBrowser: "Ouverture du navigateur pour la connexion...",
   },
   de: {
-    notSignedIn: "Sie sind nicht bei VibPage angemeldet.",
+    welcome: "Willkommen bei VibPage!",
+    requireLogin: "Melden Sie sich an, um loszulegen. Nach der Anmeldung können Sie jede Browser-Aufgabe mit KI automatisieren.",
     signInNow: "Jetzt anmelden? (J/n) ",
     loginFailed: "Anmeldung fehlgeschlagen: ",
-    continueWithout: "Fortfahren ohne Anmeldung. Einige Funktionen sind möglicherweise eingeschränkt.",
+    continueWithout: "Anmeldung übersprungen. Einige Funktionen sind nicht verfügbar.",
+    openingBrowser: "Browser wird zur Anmeldung geöffnet...",
   },
   es: {
-    notSignedIn: "No has iniciado sesión en VibPage.",
+    welcome: "¡Bienvenido a VibPage!",
+    requireLogin: "Inicia sesión para comenzar. Una vez conectado, podrás automatizar cualquier tarea del navegador con IA.",
     signInNow: "¿Iniciar sesión ahora? (S/n) ",
     loginFailed: "Error de inicio de sesión: ",
-    continueWithout: "Continuando sin iniciar sesión. Algunas funciones pueden estar limitadas.",
+    continueWithout: "Inicio de sesión omitido. Algunas funciones no estarán disponibles.",
+    openingBrowser: "Abriendo navegador para iniciar sesión...",
   },
   pt: {
-    notSignedIn: "Você não está conectado ao VibPage.",
+    welcome: "Bem-vindo ao VibPage!",
+    requireLogin: "Faça login para começar. Após o login, você poderá automatizar qualquer tarefa do navegador com IA.",
     signInNow: "Entrar agora? (S/n) ",
     loginFailed: "Falha no login: ",
-    continueWithout: "Continuando sem login. Alguns recursos podem ser limitados.",
+    continueWithout: "Login ignorado. Alguns recursos estarão indisponíveis.",
+    openingBrowser: "Abrindo navegador para login...",
   },
   ko: {
-    notSignedIn: "VibPage에 로그인되지 않았습니다.",
+    welcome: "VibPage에 오신 것을 환영합니다!",
+    requireLogin: "시작하려면 로그인하세요. 로그인 후 AI로 모든 브라우저 작업을 자동화할 수 있습니다.",
     signInNow: "지금 로그인하시겠습니까? (Y/n) ",
     loginFailed: "로그인 실패: ",
-    continueWithout: "로그인 없이 계속합니다. 일부 기능이 제한될 수 있습니다.",
+    continueWithout: "로그인을 건너뛰었습니다. 일부 기능을 사용할 수 없습니다.",
+    openingBrowser: "로그인을 위해 브라우저를 여는 중...",
   },
   ja: {
-    notSignedIn: "VibPageにサインインしていません。",
+    welcome: "VibPageへようこそ！",
+    requireLogin: "サインインして始めましょう。ログイン後、AIであらゆるブラウザタスクを自動化できます。",
     signInNow: "今すぐサインインしますか？(Y/n) ",
     loginFailed: "ログイン失敗：",
-    continueWithout: "ログインせずに続行します。一部の機能が制限される場合があります。",
+    continueWithout: "ログインをスキップしました。一部の機能が利用できません。",
+    openingBrowser: "サインインのためブラウザを開いています...",
   },
 };
 
@@ -178,7 +196,7 @@ const WELCOME_TEXTS: Record<Language, { subtitle: string; tips: string[]; quit: 
   },
 };
 
-function showWelcome(provider: string, model: string, language: Language) {
+function showBanner(language: Language) {
   process.stdout.write("\x1B[2J\x1B[H");
   const t = WELCOME_TEXTS[language] || WELCOME_TEXTS.en;
 
@@ -188,6 +206,10 @@ function showWelcome(provider: string, model: string, language: Language) {
   }
   console.log("");
   console.log(chalk.rgb(151, 220, 226)(`  ${t.subtitle}`) + chalk.dim(`  v${pkg.version}\n`));
+}
+
+function showTips(language: Language, provider: string, model: string) {
+  const t = WELCOME_TEXTS[language] || WELCOME_TEXTS.en;
   t.tips.forEach((tip, i) => {
     console.log(chalk.white(`  ${i + 1}. ${tip}`));
   });
@@ -225,12 +247,17 @@ program
     }
     const projectConfig = loadProjectConfig();
 
+    // Show banner first
+    showBanner(projectConfig.language);
+
     // Check login status — if not logged in, prompt user
     if (!isProxyMode(config)) {
       const lt = LOGIN_TEXTS[projectConfig.language] || LOGIN_TEXTS.en;
-      console.log(chalk.yellow(`\n  ${lt.notSignedIn}\n`));
+      console.log(chalk.rgb(151, 220, 226)(`  ${lt.welcome}\n`));
+      console.log(chalk.white(`  ${lt.requireLogin}\n`));
       const wantLogin = await askYesNo(chalk.white(`  ${lt.signInNow}`));
       if (wantLogin) {
+        console.log(chalk.dim(`\n  ${lt.openingBrowser}\n`));
         const { login } = await import("./login.js");
         try {
           await login();
@@ -245,7 +272,7 @@ program
       }
     }
 
-    showWelcome(config.provider, config.model, projectConfig.language);
+    showTips(projectConfig.language, config.provider, config.model);
 
     const agent = createAgent(config, projectConfig.language);
 
