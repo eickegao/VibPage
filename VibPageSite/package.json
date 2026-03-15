@@ -12,6 +12,8 @@
     "astro": "astro"
   },
   "dependencies": {
+    "@clerk/astro": "^3.0.4",
+    "@clerk/clerk-js": "^6.3.0",
     "@tailwindcss/vite": "^4.2.1",
     "astro": "^6.0.4",
     "tailwindcss": "^4.2.1"

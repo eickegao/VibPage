@@ -11,9 +11,42 @@
       <a href="#pricing" class="text-sm text-gray-400 hover:text-white transition">Pricing</a>
       <a href="#docs" class="text-sm text-gray-400 hover:text-white transition">Docs</a>
       <a href="https://github.com/eickegao/vibpage" target="_blank" class="text-sm text-gray-400 hover:text-white transition">GitHub</a>
-      <a href="/login" class="px-4 py-2 text-sm font-medium bg-teal-500 hover:bg-teal-400 text-gray-950 rounded-lg transition">
-        Sign In
-      </a>
+      <div id="auth-buttons">
+        <a href="/login" class="px-4 py-2 text-sm font-medium bg-teal-500 hover:bg-teal-400 text-gray-950 rounded-lg transition">
+          Sign In
+        </a>
+      </div>
     </div>
   </nav>
 </header>
+
+<script
+  is:inline
+  async
+  crossorigin="anonymous"
+  data-clerk-publishable-key="pk_live_Y2xlcmsudmlicGFnZS5jb20k"
+  src="https://clerk.vibpage.com/npm/@clerk/clerk-js@5/dist/clerk.browser.js"
+  type="text/javascript"
+></script>
+<script is:inline>
+  window.addEventListener('load', async function () {
+    try {
+      await Clerk.load();
+
+      var authDiv = document.getElementById('auth-buttons');
+      if (Clerk.user) {
+        var email = Clerk.user.primaryEmailAddress
+          ? Clerk.user.primaryEmailAddress.emailAddress
+          : 'Account';
+        authDiv.innerHTML =
+          '<button id="sign-out-btn" class="px-4 py-2 text-sm font-medium text-gray-400 hover:text-white transition">' +
+          email + ' (Sign Out)</button>';
+        document.getElementById('sign-out-btn').addEventListener('click', function () {
+          Clerk.signOut({ redirectUrl: '/' });
+        });
+      }
+    } catch (e) {
+      // Keep default Sign In button
+    }
+  });
+</script>

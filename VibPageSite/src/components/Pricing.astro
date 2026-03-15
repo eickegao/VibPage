@@ -134,55 +134,91 @@ const plans = [
           <ul class="space-y-3 mb-8 flex-1">
             {plan.features.map((f) => (
               <li class="flex items-start gap-2 text-sm text-gray-300">
-                <span class="text-teal-400 mt-0.5">✓</span>
+                <span class="text-teal-400 mt-0.5">&#10003;</span>
                 <span>{f}</span>
               </li>
             ))}
           </ul>
-          <a
-            href={`/signup?plan=${plan.name.toLowerCase().replace(/\s+/g, '-')}`}
-            class={`block text-center py-3 rounded-lg font-medium text-sm transition ${
+          <button
+            class={`plan-cta block w-full text-center py-3 rounded-lg font-medium text-sm transition cursor-pointer ${
               plan.highlight
                 ? "bg-teal-500 hover:bg-teal-400 text-gray-950"
                 : "bg-gray-800 hover:bg-gray-700 text-white"
             }`}
+            data-plan={plan.name.toLowerCase().replace(/\s+/g, '-')}
           >
             {plan.cta}
-          </a>
+          </button>
         </div>
       ))}
     </div>
   </div>
 </section>
 
-<script>
-  const btn = document.getElementById('toggle-btn')!;
-  const dot = document.getElementById('toggle-dot')!;
-  const labelMonthly = document.getElementById('label-monthly')!;
-  const labelYearly = document.getElementById('label-yearly')!;
-  const priceMonthly = document.querySelectorAll('.price-monthly');
-  const priceYearly = document.querySelectorAll('.price-yearly');
-  const yearlyTotals = document.querySelectorAll('.yearly-total');
+<script is:inline>
+  // --- Billing toggle ---
+  var btn = document.getElementById('toggle-btn');
+  var dot = document.getElementById('toggle-dot');
+  var labelMonthly = document.getElementById('label-monthly');
+  var labelYearly = document.getElementById('label-yearly');
+  var priceMonthly = document.querySelectorAll('.price-monthly');
+  var priceYearly = document.querySelectorAll('.price-yearly');
+  var yearlyTotals = document.querySelectorAll('.yearly-total');
 
-  let isYearly = false;
+  var isYearly = false;
 
-  btn.addEventListener('click', () => {
+  btn.addEventListener('click', function() {
     isYearly = !isYearly;
 
-    // Toggle dot position
     dot.style.transform = isYearly ? 'translateX(1.75rem)' : 'translateX(0)';
     btn.classList.toggle('bg-teal-500', isYearly);
     btn.classList.toggle('bg-gray-700', !isYearly);
 
-    // Toggle label colors
     labelMonthly.classList.toggle('text-white', !isYearly);
     labelMonthly.classList.toggle('text-gray-500', isYearly);
     labelYearly.classList.toggle('text-white', isYearly);
     labelYearly.classList.toggle('text-gray-500', !isYearly);
 
-    // Toggle prices
-    priceMonthly.forEach(el => el.classList.toggle('hidden', isYearly));
-    priceYearly.forEach(el => el.classList.toggle('hidden', !isYearly));
-    yearlyTotals.forEach(el => el.classList.toggle('hidden', !isYearly));
+    priceMonthly.forEach(function(el) { el.classList.toggle('hidden', isYearly); });
+    priceYearly.forEach(function(el) { el.classList.toggle('hidden', !isYearly); });
+    yearlyTotals.forEach(function(el) { el.classList.toggle('hidden', !isYearly); });
+  });
+
+  // --- Plan CTA buttons ---
+  var apiUrl = 'https://vibpage-api.eickegao.workers.dev';
+
+  document.querySelectorAll('.plan-cta').forEach(function(button) {
+    button.addEventListener('click', async function() {
+      var plan = button.dataset.plan;
+
+      // Check if Clerk is loaded and user is signed in
+      if (window.Clerk && window.Clerk.user) {
+        try {
+          var token = await window.Clerk.session.getToken();
+          var res = await fetch(apiUrl + '/api/checkout', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer ' + token,
+            },
+            body: JSON.stringify({
+              plan: plan,
+              period: isYearly ? 'yearly' : 'monthly',
+            }),
+          });
+
+          var data = await res.json();
+          if (data.url) {
+            window.location.href = data.url;
+          } else {
+            alert(data.error || 'Failed to create checkout session');
+          }
+        } catch (err) {
+          alert('Failed to connect to payment service');
+        }
+      } else {
+        window.location.href = '/signup?plan=' + plan;
+      }
+    });
   });
 </script>
