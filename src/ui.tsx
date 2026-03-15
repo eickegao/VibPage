@@ -426,6 +426,7 @@ export function App({ agent, config }: AppProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [isRemoteLocked, setIsRemoteLocked] = useState(false);
   const [pendingExit, setPendingExit] = useState(false);
+  const pendingExitRef = useRef(false);
   const [streamingText, setStreamingText] = useState("");
   const [toolStatus, setToolStatus] = useState("");
   const currentTextRef = useRef("");
@@ -471,6 +472,7 @@ export function App({ agent, config }: AppProps) {
         { id: nextId(), role: "info", text: exitTexts[currentLang] || exitTexts.en },
       ]);
       setPendingExit(true);
+      pendingExitRef.current = true;
     } else {
       exit();
     }
@@ -1004,9 +1006,10 @@ export function App({ agent, config }: AppProps) {
       const trimmed = value.trim();
 
       // Handle pending exit confirmation
-      if (pendingExit) {
+      if (pendingExitRef.current) {
         setInput("");
         setPendingExit(false);
+        pendingExitRef.current = false;
         const lower = trimmed.toLowerCase();
         if (lower === "" || lower === "y" || lower === "yes") {
           await closeBrowser();
