@@ -455,32 +455,26 @@ export function App({ agent, config }: AppProps) {
   // Exit handler — checks for open browser
   const handleExit = useCallback(async () => {
     if (isBrowserOpen()) {
-      if (pendingExit) {
-        // User confirmed — close browser and exit
-        await closeBrowser();
-        exit();
-      } else {
-        const exitTexts: Record<string, string> = {
-          "zh-CN": "浏览器仍在运行，再按一次退出将关闭浏览器并退出。",
-          "zh-TW": "瀏覽器仍在運行，再按一次退出將關閉瀏覽器並退出。",
-          en: "Browser is still running. Press exit again to close browser and quit.",
-          fr: "Le navigateur est encore ouvert. Appuyez à nouveau pour fermer et quitter.",
-          de: "Browser läuft noch. Erneut drücken zum Schließen und Beenden.",
-          es: "El navegador sigue abierto. Presiona salir de nuevo para cerrar y salir.",
-          pt: "O navegador ainda está aberto. Pressione sair novamente para fechar e sair.",
-          ko: "브라우저가 아직 실행 중입니다. 다시 종료를 누르면 브라우저를 닫고 종료합니다.",
-          ja: "ブラウザがまだ実行中です。もう一度終了を押すとブラウザを閉じて終了します。",
-        };
-        setMessages((prev) => [
-          ...prev,
-          { id: nextId(), role: "info", text: exitTexts[currentLang] || exitTexts.en },
-        ]);
-        setPendingExit(true);
-      }
+      const exitTexts: Record<string, string> = {
+        "zh-CN": "浏览器仍在运行，是否关闭浏览器并退出？(Y/n)",
+        "zh-TW": "瀏覽器仍在運行，是否關閉瀏覽器並退出？(Y/n)",
+        en: "Browser is still running. Close browser and quit? (Y/n)",
+        fr: "Le navigateur est encore ouvert. Fermer et quitter ? (Y/n)",
+        de: "Browser läuft noch. Schließen und beenden? (Y/n)",
+        es: "El navegador sigue abierto. ¿Cerrar y salir? (Y/n)",
+        pt: "O navegador ainda está aberto. Fechar e sair? (Y/n)",
+        ko: "브라우저가 아직 실행 중입니다. 브라우저를 닫고 종료할까요? (Y/n)",
+        ja: "ブラウザがまだ実行中です。閉じて終了しますか？(Y/n)",
+      };
+      setMessages((prev) => [
+        ...prev,
+        { id: nextId(), role: "info", text: exitTexts[currentLang] || exitTexts.en },
+      ]);
+      setPendingExit(true);
     } else {
       exit();
     }
-  }, [exit, pendingExit, currentLang]);
+  }, [exit, currentLang]);
 
   const filteredCommands = input.startsWith("/")
     ? SLASH_COMMANDS.filter((cmd) => cmd.name.startsWith(input.toLowerCase()))
@@ -1008,7 +1002,21 @@ export function App({ agent, config }: AppProps) {
   const handleSubmit = useCallback(
     async (value: string) => {
       const trimmed = value.trim();
+
+      // Handle pending exit confirmation
+      if (pendingExit) {
+        setInput("");
+        setPendingExit(false);
+        const lower = trimmed.toLowerCase();
+        if (lower === "" || lower === "y" || lower === "yes") {
+          await closeBrowser();
+          exit();
+        }
+        return;
+      }
+
       if (!trimmed) return;
+
       // In command-select mode, Enter selects the highlighted command
       if (modeRef.current === "command-select") {
         const matches = SLASH_COMMANDS.filter((cmd) => cmd.name.startsWith(trimmed.toLowerCase()));
