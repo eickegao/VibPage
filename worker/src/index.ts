@@ -558,6 +558,15 @@ export default {
       return handleAuthToken(request, env);
     }
 
+    // WebSocket remote control (no auth — sessionId is the auth token)
+    const remoteMatch = path.match(/^\/api\/remote\/([a-zA-Z0-9-]+)$/);
+    if (remoteMatch && request.headers.get("Upgrade") === "websocket") {
+      const sessionId = remoteMatch[1];
+      const id = env.REMOTE_SESSION.idFromName(sessionId);
+      const stub = env.REMOTE_SESSION.get(id);
+      return stub.fetch(request);
+    }
+
     // All other routes require auth
     const user = await authenticateUser(request, env);
     if (!user) {
@@ -584,15 +593,6 @@ export default {
     }
     if (path === "/api/checkout" && request.method === "POST") {
       return handleCheckout(request, env, user);
-    }
-
-    // /api/remote/:sessionId — WebSocket upgrade for remote control
-    const remoteMatch = path.match(/^\/api\/remote\/([a-zA-Z0-9-]+)$/);
-    if (remoteMatch && request.headers.get("Upgrade") === "websocket") {
-      const sessionId = remoteMatch[1];
-      const id = env.REMOTE_SESSION.idFromName(sessionId);
-      const stub = env.REMOTE_SESSION.get(id);
-      return stub.fetch(request);
     }
 
     return errorResponse("Not found", 404);
