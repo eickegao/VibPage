@@ -358,15 +358,20 @@ async function runHybridMode(
       return;
     }
 
-    // Check if task is done
+    // Separate done from executable actions
     const doneAction = plan.actions.find((a: DomAction) => a.action === "done");
-    if (doneAction) {
+    const executableActions = plan.actions.filter(
+      (a: DomAction) => a.action !== "done" && a.action !== "use_vision"
+    );
+
+    // If only "done" with no real actions, task is complete
+    if (doneAction && executableActions.length === 0) {
       logs.push(`[hybrid] Task completed: ${doneAction.message || "done"}`);
       return;
     }
 
     // Step 3: Execute DOM actions
-    const results = await executeDomActions(page, plan.actions, snapshot.elements);
+    const results = await executeDomActions(page, executableActions, snapshot.elements);
     const resultText = formatResults(results);
     logs.push(resultText);
     previousActionLog.push(`Turn ${turns}: ${resultText}`);
@@ -381,6 +386,12 @@ async function runHybridMode(
 
     // Wait for page to settle after actions
     await new Promise((r) => setTimeout(r, 1000));
+
+    // If planner also included "done", task is complete after executing actions
+    if (doneAction) {
+      logs.push(`[hybrid] Task completed: ${doneAction.message || "done"}`);
+      return;
+    }
   }
 
   if (turns >= MAX_TURNS) {
