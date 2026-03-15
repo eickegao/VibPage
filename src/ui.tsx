@@ -444,7 +444,13 @@ export function App({ agent, config }: AppProps) {
 
   // Handle arrow keys and enter for selection modes
   useInput((ch, key) => {
-    if (isLoading) return;
+    // Always allow Escape to exit during loading
+    if (isLoading) {
+      if (key.escape) {
+        exit();
+      }
+      return;
+    }
     if (!isMenuMode) return;
     // In command-select mode, TextInput handles Enter via onSubmit
     if (mode === "command-select" && key.return) return;
