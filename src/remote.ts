@@ -121,7 +121,7 @@ export function getActiveSession(): RemoteSession | null {
 export async function generateQrCode(url: string): Promise<string> {
   return new Promise((resolve) => {
     (qrcodeModule as any).generate(url, { small: true }, (qr: string) => {
-      resolve(qr);
+      resolve(qr.trim());
     });
   });
 }

@@ -25,7 +25,7 @@ import {
 
 interface Message {
   id: number;
-  role: "user" | "assistant" | "tool" | "status";
+  role: "user" | "assistant" | "tool" | "status" | "info";
   text: string;
 }
 
@@ -331,6 +331,16 @@ function MessageItem({ msg }: { msg: Message }) {
       return (
         <Text color="red">{"  ⚠ "}{msg.text}</Text>
       );
+    case "info": {
+      const lines = msg.text.split("\n");
+      return (
+        <Box flexDirection="column" marginTop={1}>
+          {lines.map((line, i) => (
+            <Text key={i} color="#97DCE2">{i === 0 ? "  " : "  "}{line}</Text>
+          ))}
+        </Box>
+      );
+    }
     default:
       return <Text>{msg.text}</Text>;
   }
@@ -800,28 +810,23 @@ export function App({ agent, config }: AppProps) {
         if (isRemoteActive()) {
           setMessages((prev) => [
             ...prev,
-            { id: nextId(), role: "status", text: texts.alreadyActive },
+            { id: nextId(), role: "info", text: texts.alreadyActive },
           ]);
           return;
         }
-
-        setMessages((prev) => [
-          ...prev,
-          { id: nextId(), role: "status", text: texts.scanning },
-        ]);
 
         const session = await startRemoteSession(currentLang, async (event: RemoteEvent) => {
           if (event.type === "connected" && event.from === "mobile") {
             setIsRemoteLocked(true);
             setMessages((prev) => [
               ...prev,
-              { id: nextId(), role: "status", text: texts.connected },
+              { id: nextId(), role: "info", text: texts.connected },
             ]);
           } else if (event.type === "disconnected") {
             setIsRemoteLocked(false);
             setMessages((prev) => [
               ...prev,
-              { id: nextId(), role: "status", text: texts.disconnected },
+              { id: nextId(), role: "info", text: texts.disconnected },
             ]);
           } else if (event.type === "prompt" && event.text) {
             const promptText = event.text.slice(0, 2000);
@@ -844,7 +849,7 @@ export function App({ agent, config }: AppProps) {
           const qr = await generateQrCode(remoteUrl);
           setMessages((prev) => [
             ...prev,
-            { id: nextId(), role: "status", text: `${qr}\n${texts.orVisit}: ${remoteUrl}` },
+            { id: nextId(), role: "info", text: `${texts.scanning}\n\n${qr}\n${texts.orVisit}: ${remoteUrl}` },
           ]);
         }
         return;
