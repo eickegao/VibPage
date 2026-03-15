@@ -10,7 +10,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(join(__dirname, "..", "package.json"), "utf-8"));
 import React from "react";
 import { render } from "ink";
-import { loadConfig } from "./config.js";
+import { loadConfig, isProxyMode } from "./config.js";
 import { createAgent } from "./agent.js";
 import { App } from "./ui.js";
 import {
@@ -19,6 +19,7 @@ import {
   loadProjectConfig,
   saveProjectConfig,
 } from "./project-config.js";
+import readline from "readline";
 
 // 5 gradient anchor colors (teal to light cyan)
 const COLORS: [number, number, number][] = [
@@ -71,6 +72,63 @@ const BANNER_LINES = [
   "  ╚████╔╝  ██║ ██████╔╝ ██║      ██║  ██║ ╚██████╔╝ ███████╗",
   "   ╚═══╝   ╚═╝ ╚═════╝  ╚═╝      ╚═╝  ╚═╝  ╚═════╝  ╚══════╝",
 ];
+
+const LOGIN_TEXTS: Record<Language, { notSignedIn: string; signInNow: string; loginFailed: string; continueWithout: string }> = {
+  "zh-CN": {
+    notSignedIn: "您尚未登录 VibPage。",
+    signInNow: "现在登录？(Y/n) ",
+    loginFailed: "登录失败：",
+    continueWithout: "未登录继续使用，部分功能可能受限。",
+  },
+  "zh-TW": {
+    notSignedIn: "您尚未登入 VibPage。",
+    signInNow: "現在登入？(Y/n) ",
+    loginFailed: "登入失敗：",
+    continueWithout: "未登入繼續使用，部分功能可能受限。",
+  },
+  en: {
+    notSignedIn: "You are not signed in to VibPage.",
+    signInNow: "Sign in now? (Y/n) ",
+    loginFailed: "Login failed: ",
+    continueWithout: "Continuing without login. Some features may be limited.",
+  },
+  fr: {
+    notSignedIn: "Vous n'êtes pas connecté à VibPage.",
+    signInNow: "Se connecter maintenant ? (O/n) ",
+    loginFailed: "Échec de la connexion : ",
+    continueWithout: "Continuation sans connexion. Certaines fonctionnalités peuvent être limitées.",
+  },
+  de: {
+    notSignedIn: "Sie sind nicht bei VibPage angemeldet.",
+    signInNow: "Jetzt anmelden? (J/n) ",
+    loginFailed: "Anmeldung fehlgeschlagen: ",
+    continueWithout: "Fortfahren ohne Anmeldung. Einige Funktionen sind möglicherweise eingeschränkt.",
+  },
+  es: {
+    notSignedIn: "No has iniciado sesión en VibPage.",
+    signInNow: "¿Iniciar sesión ahora? (S/n) ",
+    loginFailed: "Error de inicio de sesión: ",
+    continueWithout: "Continuando sin iniciar sesión. Algunas funciones pueden estar limitadas.",
+  },
+  pt: {
+    notSignedIn: "Você não está conectado ao VibPage.",
+    signInNow: "Entrar agora? (S/n) ",
+    loginFailed: "Falha no login: ",
+    continueWithout: "Continuando sem login. Alguns recursos podem ser limitados.",
+  },
+  ko: {
+    notSignedIn: "VibPage에 로그인되지 않았습니다.",
+    signInNow: "지금 로그인하시겠습니까? (Y/n) ",
+    loginFailed: "로그인 실패: ",
+    continueWithout: "로그인 없이 계속합니다. 일부 기능이 제한될 수 있습니다.",
+  },
+  ja: {
+    notSignedIn: "VibPageにサインインしていません。",
+    signInNow: "今すぐサインインしますか？(Y/n) ",
+    loginFailed: "ログイン失敗：",
+    continueWithout: "ログインせずに続行します。一部の機能が制限される場合があります。",
+  },
+};
 
 const WELCOME_TEXTS: Record<Language, { subtitle: string; tips: string[]; quit: string }> = {
   "zh-CN": {
@@ -137,26 +195,20 @@ function showWelcome(provider: string, model: string, language: Language) {
   console.log(chalk.rgb(105, 203, 212)(`  Using: ${provider}/${model}\n`));
 }
 
+function askYesNo(question: string): Promise<boolean> {
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  return new Promise((resolve) => {
+    rl.question(question, (answer) => {
+      rl.close();
+      resolve(answer.toLowerCase().startsWith("y"));
+    });
+  });
+}
+
 program
   .name("vibpage")
   .description("AI-powered browser automation (RPA) CLI")
-  .version(pkg.version);
-
-program
-  .command("login")
-  .description("Sign in to VibPage via browser")
-  .action(async () => {
-    const { login } = await import("./login.js");
-    try {
-      await login();
-    } catch (err: any) {
-      console.error(`Login failed: ${err.message}`);
-      process.exit(1);
-    }
-    process.exit(0);
-  });
-
-program
+  .version(pkg.version)
   .option("-m, --model <model>", "AI model to use")
   .option("-p, --provider <provider>", "AI provider (anthropic/openai/google)")
   .option("-o, --output <dir>", "Output directory")
@@ -172,6 +224,26 @@ program
       saveProjectConfig(loadProjectConfig());
     }
     const projectConfig = loadProjectConfig();
+
+    // Check login status — if not logged in, prompt user
+    if (!isProxyMode(config)) {
+      const lt = LOGIN_TEXTS[projectConfig.language] || LOGIN_TEXTS.en;
+      console.log(chalk.yellow(`\n  ${lt.notSignedIn}\n`));
+      const wantLogin = await askYesNo(chalk.white(`  ${lt.signInNow}`));
+      if (wantLogin) {
+        const { login } = await import("./login.js");
+        try {
+          await login();
+          Object.assign(config, loadConfig());
+        } catch (err: any) {
+          console.error(chalk.red(`\n  ${lt.loginFailed}${err.message}\n`));
+        }
+      }
+
+      if (!isProxyMode(config)) {
+        console.log(chalk.dim(`\n  ${lt.continueWithout}\n`));
+      }
+    }
 
     showWelcome(config.provider, config.model, projectConfig.language);
 
