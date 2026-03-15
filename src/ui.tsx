@@ -704,9 +704,25 @@ export function App({ agent, config }: AppProps) {
         await agent.prompt(text);
         await agent.waitForIdle();
       } catch (err: any) {
+        let errorMsg = err.message || String(err);
+        // Check for insufficient balance / 402 error
+        if (errorMsg.includes("402") || errorMsg.toLowerCase().includes("insufficient") || errorMsg.toLowerCase().includes("balance")) {
+          const insufficientTexts: Record<string, string> = {
+            "zh-CN": "积分不足，请充值后再试。访问 https://vibpage.com 管理您的订阅。",
+            "zh-TW": "積分不足，請充值後再試。訪問 https://vibpage.com 管理您的訂閱。",
+            en: "Insufficient credits. Please top up at https://vibpage.com to continue.",
+            fr: "Crédits insuffisants. Rechargez sur https://vibpage.com pour continuer.",
+            de: "Guthaben aufgebraucht. Laden Sie auf https://vibpage.com auf.",
+            es: "Créditos insuficientes. Recarga en https://vibpage.com para continuar.",
+            pt: "Créditos insuficientes. Recarregue em https://vibpage.com para continuar.",
+            ko: "크레딧이 부족합니다. https://vibpage.com 에서 충전하세요.",
+            ja: "クレジット不足です。https://vibpage.com で追加してください。",
+          };
+          errorMsg = insufficientTexts[currentLang] || insufficientTexts.en;
+        }
         setMessages((prev) => [
           ...prev,
-          { id: nextId(), role: "status", text: err.message },
+          { id: nextId(), role: "status", text: errorMsg },
         ]);
       }
       setIsLoading(false);
