@@ -4,8 +4,12 @@ import { homedir } from "os";
 import { join } from "path";
 import { existsSync, readFileSync } from "fs";
 
-const VIEWPORT = { width: 1280, height: 800 };
-const MAX_TURNS = 50;
+type Precision = "high" | "normal";
+
+const VIEWPORT_HIGH = { width: 1280, height: 800 };
+const VIEWPORT_NORMAL = { width: 1024, height: 768 };
+const MAX_TURNS_HIGH = 50;
+const MAX_TURNS_NORMAL = 25;
 
 // Track open browser so it can be closed via closeBrowser()
 let openContext: any = null;
@@ -40,7 +44,7 @@ export async function openBrowser(url?: string): Promise<boolean> {
 
   const context = await chromium.launchPersistentContext(userDataDir, {
     headless: false,
-    viewport: VIEWPORT,
+    viewport: VIEWPORT_NORMAL,
     args: ["--disable-blink-features=AutomationControlled"],
   });
   openContext = context;
@@ -177,9 +181,22 @@ async function executeActions(page: any, actions: ComputerAction[]): Promise<voi
   }
 }
 
-async function takeScreenshot(page: any): Promise<string> {
-  const buffer = await page.screenshot({ type: "png" });
+async function takeScreenshot(page: any, precision: Precision): Promise<string> {
+  if (precision === "high") {
+    const buffer = await page.screenshot({ type: "png" });
+    return buffer.toString("base64");
+  }
+  // Normal mode: JPEG with quality 60 for smaller size / fewer tokens
+  const buffer = await page.screenshot({ type: "jpeg", quality: 60 });
   return buffer.toString("base64");
+}
+
+function screenshotMimeType(precision: Precision): string {
+  return precision === "high" ? "image/png" : "image/jpeg";
+}
+
+function screenshotDetail(precision: Precision): string {
+  return precision === "high" ? "high" : "auto";
 }
 
 const browserTaskParams = Type.Object({
@@ -189,6 +206,12 @@ const browserTaskParams = Type.Object({
   task: Type.String({
     description: "Natural language description of what to do on this page",
   }),
+  precision: Type.Optional(
+    Type.Union([Type.Literal("high"), Type.Literal("normal")], {
+      description:
+        'Precision mode. "high" = full resolution PNG screenshots every turn (more accurate, costs more tokens). "normal" = compressed JPEG with optimized screenshot frequency (recommended for most tasks). Default: "normal"',
+    })
+  ),
 });
 
 export const browserTaskTool: AgentTool<typeof browserTaskParams> = {
@@ -204,6 +227,10 @@ export const browserTaskTool: AgentTool<typeof browserTaskParams> = {
         "API key required for browser tasks. Set OPENAI_API_KEY, or configure proxyUrl + vibpageApiKey in ~/.vibpage/config.json"
       );
     }
+
+    const precision: Precision = params.precision || "normal";
+    const viewport = precision === "high" ? VIEWPORT_HIGH : VIEWPORT_NORMAL;
+    const maxTurns = precision === "high" ? MAX_TURNS_HIGH : MAX_TURNS_NORMAL;
 
     const userDataDir = join(homedir(), ".vibpage", "browser-data");
 
@@ -225,7 +252,7 @@ export const browserTaskTool: AgentTool<typeof browserTaskParams> = {
 
     const context = await chromium.launchPersistentContext(userDataDir, {
       headless: false,
-      viewport: VIEWPORT,
+      viewport,
       args: ["--disable-blink-features=AutomationControlled"],
     });
     openContext = context;
@@ -254,10 +281,10 @@ Start by taking a screenshot to see the current page state.`;
 
       let response = await callComputerUse(apiConfig, taskPrompt);
       let turns = 0;
-      logs.push(`Started: ${params.task}`);
+      logs.push(`Started: ${params.task} [${precision} precision]`);
       logs.push(`URL: ${params.url}`);
 
-      while (turns < MAX_TURNS) {
+      while (turns < maxTurns) {
         turns++;
 
         const computerCall = response.output?.find(
@@ -294,7 +321,7 @@ Start by taking a screenshot to see the current page state.`;
 
           logs.push("Continuing...");
           await new Promise((r) => setTimeout(r, 3000));
-          const screenshot = await takeScreenshot(page);
+          const screenshot = await takeScreenshot(page, precision);
           response = await callComputerUse(
             apiConfig,
             [
@@ -303,8 +330,8 @@ Start by taking a screenshot to see the current page state.`;
                 call_id: "continue",
                 output: {
                   type: "computer_screenshot",
-                  image_url: `data:image/png;base64,${screenshot}`,
-                  detail: "original",
+                  image_url: `data:${screenshotMimeType(precision)};base64,${screenshot}`,
+                  detail: screenshotDetail(precision),
                 },
               },
             ],
@@ -323,9 +350,11 @@ Start by taking a screenshot to see the current page state.`;
         logs.push(`Turn ${turns}: ${actionDescs.join(", ")}`);
 
         await executeActions(page, computerCall.actions);
-        await new Promise((r) => setTimeout(r, 1500));
 
-        const screenshot = await takeScreenshot(page);
+        // Normal mode: shorter wait between actions
+        await new Promise((r) => setTimeout(r, precision === "high" ? 1500 : 800));
+
+        const screenshot = await takeScreenshot(page, precision);
         response = await callComputerUse(
           apiConfig,
           [
@@ -334,8 +363,8 @@ Start by taking a screenshot to see the current page state.`;
               call_id: computerCall.call_id,
               output: {
                 type: "computer_screenshot",
-                image_url: `data:image/png;base64,${screenshot}`,
-                detail: "original",
+                image_url: `data:${screenshotMimeType(precision)};base64,${screenshot}`,
+                detail: screenshotDetail(precision),
               },
             },
           ],
@@ -343,7 +372,7 @@ Start by taking a screenshot to see the current page state.`;
         );
       }
 
-      if (turns >= MAX_TURNS) {
+      if (turns >= maxTurns) {
         logs.push("Reached maximum turns limit.");
       }
 
