@@ -24,9 +24,10 @@ Query param `role=cli` or `role=mobile` identifies the connection.
 
 **Behavior**:
 - Stores up to 2 WebSocket connections (one CLI, one mobile).
-- Only one mobile connection allowed; second attempt is rejected.
+- Only one mobile connection allowed; second attempt rejected with WebSocket close code 4001 "Session already has a mobile connection". Phone page shows "already connected" error.
 - Messages from mobile are forwarded to CLI and vice versa.
 - On disconnect, notifies the other end.
+- Idle timeout: if no connections for 5 minutes, DO self-destructs via `alarm()`.
 - Auto-hibernates when both connections close.
 
 **Message Protocol** (JSON):
@@ -35,10 +36,13 @@ Query param `role=cli` or `role=mobile` identifies the connection.
 // Mobile → CLI
 { type: "prompt", text: "go to YouTube and search xxx" }
 
-// CLI → Mobile
-{ type: "message", role: "assistant", text: "Opening YouTube..." }
+// CLI → Mobile (text is a delta/chunk, not accumulated)
+{ type: "message_delta", text: "Opening " }
+{ type: "message_delta", text: "YouTube..." }
+{ type: "message_end", text: "Opening YouTube..." }  // full text on completion
 { type: "tool", name: "browser_task", status: "running" }
 { type: "tool", name: "browser_task", status: "done" }
+{ type: "busy" }  // agent is processing, reject new prompts
 
 // System
 { type: "connected", from: "mobile" }
@@ -86,11 +90,13 @@ new_classes = ["RemoteSession"]
 
 **No authentication required** — sessionId is the auth token.
 
+**Implementation**: Static Astro page with inline `<script>` and vanilla JS. No framework needed — the UI is simple enough (append messages to a list, manage one WebSocket).
+
 **UI**:
 - Mobile-first full-screen layout.
-- Top: title bar with connection status indicator.
+- Top: title bar with connection status indicator (green dot = connected, red = disconnected).
 - Middle: scrollable message list (user messages right-aligned, AI messages left-aligned, tool status as system messages).
-- Bottom: text input + send button, fixed above keyboard.
+- Bottom: text input + send button, fixed above keyboard. Send button disabled while agent is busy.
 
 **Behavior**:
 - Extract `s` param from URL.
@@ -99,12 +105,22 @@ new_classes = ["RemoteSession"]
 - Display incoming messages by type.
 - Show "Disconnected" overlay if WebSocket closes.
 
+## Edge Cases
+
+- **Concurrent prompts**: If agent is busy, mobile receives `{ type: "busy" }` and the phone UI disables the send button until the current task completes.
+- **Escape key during remote**: Pressing Escape in CLI disconnects the remote session and restores terminal input (does not exit the app).
+- **Multiple `/remote` invocations**: If a remote session is already active, show "Remote session already active" message and ignore.
+- **QR code fallback**: Also print the URL as plain text below the QR code, in case the terminal is too narrow.
+- **WebSocket disconnect/crash**: CLI shows "Connection lost" and restores terminal input. No auto-reconnect — user can run `/remote` again.
+- **Prompt length limit**: Mobile input capped at 2000 characters.
+
 ## Security
 
-- sessionId is a random UUID, one-time use, only valid while CLI is running.
+- sessionId is a random UUIDv4 (122 bits of entropy), one-time use, only valid while CLI is running.
 - No persistent auth or stored credentials on the phone.
 - Only one mobile connection per session.
 - Session destroyed when CLI disconnects.
+- Origin check on mobile WebSocket upgrade (only allow `vibpage.com`).
 
 ## Data Flow Example
 
