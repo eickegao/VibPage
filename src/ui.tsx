@@ -10,7 +10,7 @@ import {
   saveProjectConfig,
 } from "./project-config.js";
 import { buildSystemPrompt } from "./agent.js";
-import { closeBrowser, openBrowser } from "./tools/browser-task.js";
+import { closeBrowser, openBrowser, isBrowserOpen } from "./tools/browser-task.js";
 import { listActions, type Action } from "./tools/action.js";
 import { loadConfig } from "./config.js";
 import {
@@ -425,6 +425,7 @@ export function App({ agent, config }: AppProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isRemoteLocked, setIsRemoteLocked] = useState(false);
+  const [pendingExit, setPendingExit] = useState(false);
   const [streamingText, setStreamingText] = useState("");
   const [toolStatus, setToolStatus] = useState("");
   const currentTextRef = useRef("");
@@ -451,6 +452,36 @@ export function App({ agent, config }: AppProps) {
   const [menuPath, setMenuPath] = useState<string[]>([]);
 
   // Filtered commands for command-select mode
+  // Exit handler — checks for open browser
+  const handleExit = useCallback(async () => {
+    if (isBrowserOpen()) {
+      if (pendingExit) {
+        // User confirmed — close browser and exit
+        await closeBrowser();
+        exit();
+      } else {
+        const exitTexts: Record<string, string> = {
+          "zh-CN": "浏览器仍在运行，再按一次退出将关闭浏览器并退出。",
+          "zh-TW": "瀏覽器仍在運行，再按一次退出將關閉瀏覽器並退出。",
+          en: "Browser is still running. Press exit again to close browser and quit.",
+          fr: "Le navigateur est encore ouvert. Appuyez à nouveau pour fermer et quitter.",
+          de: "Browser läuft noch. Erneut drücken zum Schließen und Beenden.",
+          es: "El navegador sigue abierto. Presiona salir de nuevo para cerrar y salir.",
+          pt: "O navegador ainda está aberto. Pressione sair novamente para fechar e sair.",
+          ko: "브라우저가 아직 실행 중입니다. 다시 종료를 누르면 브라우저를 닫고 종료합니다.",
+          ja: "ブラウザがまだ実行中です。もう一度終了を押すとブラウザを閉じて終了します。",
+        };
+        setMessages((prev) => [
+          ...prev,
+          { id: nextId(), role: "info", text: exitTexts[currentLang] || exitTexts.en },
+        ]);
+        setPendingExit(true);
+      }
+    } else {
+      exit();
+    }
+  }, [exit, pendingExit, currentLang]);
+
   const filteredCommands = input.startsWith("/")
     ? SLASH_COMMANDS.filter((cmd) => cmd.name.startsWith(input.toLowerCase()))
     : SLASH_COMMANDS;
@@ -486,7 +517,7 @@ export function App({ agent, config }: AppProps) {
           stopRemoteSession();
           setIsRemoteLocked(false);
         } else {
-          exit();
+          handleExit();
         }
       }
       return;
@@ -861,12 +892,13 @@ export function App({ agent, config }: AppProps) {
         cfg.vibpageApiKey = "";
         cfg.proxyUrl = "";
         saveConfig(cfg);
+        if (isBrowserOpen()) await closeBrowser();
         exit();
         return;
       }
 
       if (cmd.name === "/exit") {
-        exit();
+        await handleExit();
         return;
       }
 
@@ -992,7 +1024,7 @@ export function App({ agent, config }: AppProps) {
       setInput("");
 
       if (trimmed === "exit" || trimmed === "quit") {
-        exit();
+        await handleExit();
         return;
       }
 

@@ -17,6 +17,10 @@ const MAX_TURNS = 50;
 // Track open browser so it can be closed via closeBrowser()
 let openContext: any = null;
 
+export function isBrowserOpen(): boolean {
+  return openContext !== null;
+}
+
 export async function closeBrowser(): Promise<boolean> {
   if (openContext) {
     await openContext.close();
