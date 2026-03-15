@@ -849,7 +849,7 @@ export function App({ agent, config }: AppProps) {
           const qr = await generateQrCode(remoteUrl);
           setMessages((prev) => [
             ...prev,
-            { id: nextId(), role: "info", text: `${texts.scanning}\n\n${qr}\n${texts.orVisit}: ${remoteUrl}` },
+            { id: nextId(), role: "info", text: `${texts.scanning}\n\n${qr}` },
           ]);
         }
         return;
