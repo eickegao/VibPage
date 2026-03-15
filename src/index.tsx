@@ -140,7 +140,23 @@ function showWelcome(provider: string, model: string, language: Language) {
 program
   .name("vibpage")
   .description("AI-powered browser automation (RPA) CLI")
-  .version(pkg.version)
+  .version(pkg.version);
+
+program
+  .command("login")
+  .description("Sign in to VibPage via browser")
+  .action(async () => {
+    const { login } = await import("./login.js");
+    try {
+      await login();
+    } catch (err: any) {
+      console.error(`Login failed: ${err.message}`);
+      process.exit(1);
+    }
+    process.exit(0);
+  });
+
+program
   .option("-m, --model <model>", "AI model to use")
   .option("-p, --provider <provider>", "AI provider (anthropic/openai/google)")
   .option("-o, --output <dir>", "Output directory")
