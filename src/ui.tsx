@@ -13,6 +13,15 @@ import { buildSystemPrompt } from "./agent.js";
 import { closeBrowser, openBrowser } from "./tools/browser-task.js";
 import { listActions, type Action } from "./tools/action.js";
 import { loadConfig } from "./config.js";
+import {
+  startRemoteSession,
+  stopRemoteSession,
+  isRemoteActive,
+  getActiveSession,
+  generateQrCode,
+  getRemoteTexts,
+  type RemoteEvent,
+} from "./remote.js";
 
 interface Message {
   id: number;
@@ -145,6 +154,21 @@ const SLASH_COMMANDS: SlashCommand[] = [
       pt: "Mostrar comandos disponíveis",
       ko: "사용 가능한 명령어 표시",
       ja: "利用可能なコマンドを表示",
+    },
+    prompt: "",
+  },
+  {
+    name: "/remote",
+    description: {
+      "zh-CN": "手机遥控 (扫码连接)",
+      "zh-TW": "手機遙控 (掃碼連接)",
+      en: "Phone remote (scan QR)",
+      fr: "Télécommande (scanner QR)",
+      de: "Handy-Fernsteuerung (QR scannen)",
+      es: "Control remoto (escanear QR)",
+      pt: "Controle remoto (escanear QR)",
+      ko: "휴대폰 리모컨 (QR 스캔)",
+      ja: "スマホリモコン (QRスキャン)",
     },
     prompt: "",
   },
@@ -390,6 +414,7 @@ export function App({ agent, config }: AppProps) {
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isRemoteLocked, setIsRemoteLocked] = useState(false);
   const [streamingText, setStreamingText] = useState("");
   const [toolStatus, setToolStatus] = useState("");
   const currentTextRef = useRef("");
@@ -444,10 +469,15 @@ export function App({ agent, config }: AppProps) {
 
   // Handle arrow keys and enter for selection modes
   useInput((ch, key) => {
-    // Always allow Escape to exit during loading
-    if (isLoading) {
+    // Always allow Escape during loading or remote lock
+    if (isLoading || isRemoteLocked) {
       if (key.escape) {
-        exit();
+        if (isRemoteLocked) {
+          stopRemoteSession();
+          setIsRemoteLocked(false);
+        } else {
+          exit();
+        }
       }
       return;
     }
@@ -655,8 +685,14 @@ export function App({ agent, config }: AppProps) {
           if ("content" in msg && Array.isArray(msg.content)) {
             for (const part of msg.content) {
               if ("type" in part && part.type === "text" && "text" in part) {
-                currentTextRef.current = part.text as string;
+                const newText = part.text as string;
+                const delta = newText.slice(currentTextRef.current.length);
+                currentTextRef.current = newText;
                 setStreamingText(currentTextRef.current);
+                if (delta) {
+                  const rs = getActiveSession();
+                  if (rs) rs.send({ type: "message_delta", text: delta });
+                }
               }
             }
           }
@@ -669,12 +705,14 @@ export function App({ agent, config }: AppProps) {
               ...prev,
               { id: nextId(), role: "assistant", text: finalText },
             ]);
+            const rs = getActiveSession();
+            if (rs) rs.send({ type: "message_end", text: finalText });
           }
           setStreamingText("");
           currentTextRef.current = "";
           break;
         }
-        case "tool_execution_start":
+        case "tool_execution_start": {
           setToolStatus(event.toolName);
           setMessages((prev) => [
             ...prev,
@@ -684,20 +722,27 @@ export function App({ agent, config }: AppProps) {
               text: `${TOOL_ICONS.start} ${event.toolName}`,
             },
           ]);
+          const rs = getActiveSession();
+          if (rs) rs.send({ type: "tool", name: event.toolName, status: "running" });
           break;
-        case "tool_execution_end":
+        }
+        case "tool_execution_end": {
           setToolStatus("");
+          const success = !event.isError;
           setMessages((prev) => [
             ...prev,
             {
               id: nextId(),
               role: "tool",
-              text: event.isError
-                ? `${TOOL_ICONS.error} ${event.toolName} failed`
-                : `${TOOL_ICONS.success} ${event.toolName}`,
+              text: success
+                ? `${TOOL_ICONS.success} ${event.toolName}`
+                : `${TOOL_ICONS.error} ${event.toolName} failed`,
             },
           ]);
+          const rs = getActiveSession();
+          if (rs) rs.send({ type: "tool", name: event.toolName, status: success ? "done" : "error" });
           break;
+        }
       }
     });
     return unsubscribe;
@@ -706,6 +751,10 @@ export function App({ agent, config }: AppProps) {
   const sendPrompt = useCallback(
     async (text: string) => {
       setIsLoading(true);
+      {
+        const rs = getActiveSession();
+        if (rs) rs.send({ type: "busy" });
+      }
       try {
         await agent.prompt(text);
         await agent.waitForIdle();
@@ -732,6 +781,10 @@ export function App({ agent, config }: AppProps) {
         ]);
       }
       setIsLoading(false);
+      {
+        const rs = getActiveSession();
+        if (rs) rs.send({ type: "ready" });
+      }
     },
     [agent]
   );
@@ -740,6 +793,62 @@ export function App({ agent, config }: AppProps) {
     async (cmd: SlashCommand) => {
       setInput("");
       setMode("normal");
+
+      if (cmd.name === "/remote") {
+        const texts = getRemoteTexts(currentLang);
+
+        if (isRemoteActive()) {
+          setMessages((prev) => [
+            ...prev,
+            { id: nextId(), role: "status", text: texts.alreadyActive },
+          ]);
+          return;
+        }
+
+        setMessages((prev) => [
+          ...prev,
+          { id: nextId(), role: "status", text: texts.scanning },
+        ]);
+
+        const session = await startRemoteSession(currentLang, async (event: RemoteEvent) => {
+          if (event.type === "connected" && event.from === "mobile") {
+            setIsRemoteLocked(true);
+            setMessages((prev) => [
+              ...prev,
+              { id: nextId(), role: "status", text: texts.connected },
+            ]);
+          } else if (event.type === "disconnected") {
+            setIsRemoteLocked(false);
+            setMessages((prev) => [
+              ...prev,
+              { id: nextId(), role: "status", text: texts.disconnected },
+            ]);
+          } else if (event.type === "prompt" && event.text) {
+            const promptText = event.text.slice(0, 2000);
+            setMessages((prev) => [
+              ...prev,
+              { id: nextId(), role: "user", text: promptText },
+            ]);
+            await sendPrompt(promptText);
+          } else if (event.type === "error") {
+            setMessages((prev) => [
+              ...prev,
+              { id: nextId(), role: "status", text: event.message || texts.connectionLost },
+            ]);
+            setIsRemoteLocked(false);
+          }
+        });
+
+        if (session) {
+          const remoteUrl = `https://vibpage.com/remote?s=${session.sessionId}`;
+          const qr = await generateQrCode(remoteUrl);
+          setMessages((prev) => [
+            ...prev,
+            { id: nextId(), role: "status", text: `${qr}\n${texts.orVisit}: ${remoteUrl}` },
+          ]);
+        }
+        return;
+      }
 
       if (cmd.name === "/logout") {
         const { loadConfig, saveConfig } = await import("./config.js");
@@ -1023,7 +1132,7 @@ export function App({ agent, config }: AppProps) {
               placeholder={
                 isLoading ? "waiting..." : "Type / for commands, or ask anything..."
               }
-              focus={!isLoading && (!isMenuMode || mode === "command-select")}
+              focus={!isLoading && !isRemoteLocked && (!isMenuMode || mode === "command-select")}
             />
           </Box>
           <Separator width={termWidth} />
