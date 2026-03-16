@@ -10,7 +10,7 @@ import {
   saveProjectConfig,
 } from "./project-config.js";
 import { buildSystemPrompt } from "./agent.js";
-import { closeBrowser, openBrowser, isBrowserOpen } from "./tools/browser-task.js";
+import { closeBrowser, openBrowser, isBrowserOpen, hasPendingRecording, confirmRecording, rejectRecording } from "./tools/browser-task.js";
 import { listActions, type Action } from "./tools/action.js";
 import { loadConfig } from "./config.js";
 import {
@@ -427,6 +427,8 @@ export function App({ agent, config }: AppProps) {
   const [isRemoteLocked, setIsRemoteLocked] = useState(false);
   const [pendingExit, setPendingExit] = useState(false);
   const pendingExitRef = useRef(false);
+  const [pendingRecording, setPendingRecording] = useState(false);
+  const pendingRecordingRef = useRef(false);
   const [streamingText, setStreamingText] = useState("");
   const [toolStatus, setToolStatus] = useState("");
   const currentTextRef = useRef("");
@@ -822,8 +824,29 @@ export function App({ agent, config }: AppProps) {
         const rs = getActiveSession();
         if (rs) rs.send({ type: "ready" });
       }
+
+      // Check if there are tentative recordings to confirm
+      if (hasPendingRecording()) {
+        const confirmTexts: Record<string, string> = {
+          "zh-CN": "任务完成。结果正确吗？(Y/n)",
+          "zh-TW": "任務完成。結果正確嗎？(Y/n)",
+          en: "Task completed. Results correct? (Y/n)",
+          fr: "Tâche terminée. Résultats corrects ? (Y/n)",
+          de: "Aufgabe erledigt. Ergebnisse korrekt? (Y/n)",
+          es: "Tarea completada. ¿Resultados correctos? (Y/n)",
+          pt: "Tarefa concluída. Resultados corretos? (Y/n)",
+          ko: "작업 완료. 결과가 맞나요? (Y/n)",
+          ja: "タスク完了。結果は正しいですか？(Y/n)",
+        };
+        setMessages((prev) => [
+          ...prev,
+          { id: nextId(), role: "info", text: confirmTexts[currentLang] || confirmTexts.en },
+        ]);
+        setPendingRecording(true);
+        pendingRecordingRef.current = true;
+      }
     },
-    [agent]
+    [agent, currentLang]
   );
 
   const executeCommand = useCallback(
@@ -1014,6 +1037,24 @@ export function App({ agent, config }: AppProps) {
         if (lower === "" || lower === "y" || lower === "yes") {
           await closeBrowser();
           exit();
+        }
+        return;
+      }
+
+      // Handle pending recording confirmation
+      if (pendingRecordingRef.current) {
+        setInput("");
+        setPendingRecording(false);
+        pendingRecordingRef.current = false;
+        const lower = trimmed.toLowerCase();
+        if (lower === "" || lower === "y" || lower === "yes") {
+          const count = confirmRecording();
+          setMessages((prev) => [
+            ...prev,
+            { id: nextId(), role: "info", text: `[recorded] ${count} steps cached` },
+          ]);
+        } else {
+          rejectRecording();
         }
         return;
       }

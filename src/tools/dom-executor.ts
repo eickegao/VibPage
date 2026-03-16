@@ -2,6 +2,7 @@
 
 import type { DomAction } from "./dom-planner.js";
 import type { DomElement } from "./dom-extractor.js";
+import type { ResolvedAction } from "./recording.js";
 
 export interface ExecutionResult {
   success: boolean;
@@ -82,6 +83,72 @@ export async function executeDomActions(
         error: (err as Error).message,
       });
       // Stop on first failure — will trigger vision fallback
+      break;
+    }
+  }
+
+  return results;
+}
+
+export interface ReplayResult {
+  success: boolean;
+  action: ResolvedAction;
+  error?: string;
+}
+
+export async function executeResolvedActions(
+  page: any,
+  actions: ResolvedAction[]
+): Promise<ReplayResult[]> {
+  const results: ReplayResult[] = [];
+
+  for (const action of actions) {
+    try {
+      switch (action.action) {
+        case "click": {
+          if (!action.selector) throw new Error("No selector for click");
+          await page.click(action.selector, { timeout: 5000 });
+          await page.waitForTimeout(500);
+          break;
+        }
+        case "fill": {
+          if (!action.selector) throw new Error("No selector for fill");
+          await page.fill(action.selector, action.value || "", { timeout: 5000 });
+          break;
+        }
+        case "select": {
+          if (!action.selector) throw new Error("No selector for select");
+          await page.selectOption(action.selector, action.value || "", { timeout: 5000 });
+          break;
+        }
+        case "keypress": {
+          for (const key of action.keys || []) {
+            await page.keyboard.press(key);
+          }
+          await page.waitForTimeout(300);
+          break;
+        }
+        case "scroll": {
+          const delta = action.direction === "up" ? -500 : 500;
+          await page.mouse.wheel(0, delta);
+          await page.waitForTimeout(500);
+          break;
+        }
+        case "wait": {
+          await page.waitForTimeout(2000);
+          break;
+        }
+        case "goto": {
+          if (action.url) {
+            await page.goto(action.url, { waitUntil: "domcontentloaded", timeout: 30000 });
+            await page.waitForTimeout(1000);
+          }
+          break;
+        }
+      }
+      results.push({ success: true, action });
+    } catch (err) {
+      results.push({ success: false, action, error: (err as Error).message });
       break;
     }
   }

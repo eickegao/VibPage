@@ -5,7 +5,19 @@ import { join } from "path";
 import { existsSync, readFileSync } from "fs";
 import { extractDom, formatDomSnapshot, type DomElement } from "./dom-extractor.js";
 import { planDomActions, type DomAction } from "./dom-planner.js";
-import { executeDomActions, formatResults } from "./dom-executor.js";
+import { executeDomActions, formatResults, executeResolvedActions } from "./dom-executor.js";
+import {
+  findRecording,
+  startRecordingSession,
+  addTentativeAction,
+  markVisionUsed,
+  hasTentativeActions,
+  commitRecordings,
+  discardRecordings,
+  deleteRecording,
+  updateRecordingUsage,
+  getUrlPattern,
+} from "./recording.js";
 
 type Precision = "high" | "normal";
 type Mode = "hybrid" | "vision";
@@ -19,6 +31,18 @@ let openContext: any = null;
 
 export function isBrowserOpen(): boolean {
   return openContext !== null;
+}
+
+export function hasPendingRecording(): boolean {
+  return hasTentativeActions();
+}
+
+export function confirmRecording(): number {
+  return commitRecordings();
+}
+
+export function rejectRecording(): void {
+  discardRecordings();
 }
 
 export async function closeBrowser(): Promise<boolean> {
@@ -402,6 +426,25 @@ async function runHybridMode(
   precision: Precision,
   logs: string[]
 ): Promise<void> {
+  // Check recording cache before starting AI planning
+  const urlPattern = getUrlPattern(url);
+  const cached = findRecording(urlPattern, task);
+  if (cached) {
+    logs.push(`[cached] Replaying ${cached.actions.length} recorded steps...`);
+    const results = await executeResolvedActions(page, cached.actions);
+    const allSuccess = results.every(r => r.success);
+    if (allSuccess) {
+      updateRecordingUsage(cached.id);
+      logs.push(`[cached] All ${cached.actions.length} steps replayed successfully`);
+      return;
+    }
+    logs.push(`[cached] Replay failed, falling back to AI mode`);
+    deleteRecording(cached.id);
+  }
+
+  // Start tentative recording session for this task
+  startRecordingSession(url, task);
+
   let turns = 0;
   let previousActionLog: string[] = [];
 
@@ -464,9 +507,11 @@ async function runHybridMode(
       if (r.success) {
         const desc = `${r.action.action}${r.action.element ? ` [${r.action.element}]` : ""}${r.action.value ? ` "${r.action.value}"` : ""}`;
         turnLog.push(`✓ DOM: ${desc}`);
+        addTentativeAction(action, snapshot.elements);
         await new Promise((resolve) => setTimeout(resolve, 500));
       } else {
         // DOM failed — try this specific action via vision
+        markVisionUsed();
         const actionDesc = describeActionForVision(action, snapshot.elements);
         logs.push(`[hybrid] DOM failed for "${actionDesc}", trying vision...`);
         const visionOk = await runSingleVisionStep(page, apiConfig, actionDesc, precision, logs);
