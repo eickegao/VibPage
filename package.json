@@ -1,6 +1,6 @@
 {
   "name": "vibpage",
-  "version": "0.5.26",
+  "version": "0.5.27",
   "description": "AI-powered browser automation (RPA) CLI",
   "type": "module",
   "bin": {

@@ -101,13 +101,15 @@ export function findRecording(urlPattern: string, taskDescription: string): Reco
 let tentativeActions: ResolvedAction[] = [];
 let tentativeUrl: string = "";
 let tentativeTask: string = "";
-let tentativeVisionUsed: boolean = false;
 
 export function startRecordingSession(url: string, task: string): void {
   tentativeActions = [];
   tentativeUrl = getUrlPattern(url);
   tentativeTask = task;
-  tentativeVisionUsed = false;
+}
+
+export function seedTentativeActions(actions: ResolvedAction[]): void {
+  tentativeActions.push(...actions);
 }
 
 export function addTentativeAction(action: DomAction, elements: DomElement[]): void {
@@ -117,20 +119,15 @@ export function addTentativeAction(action: DomAction, elements: DomElement[]): v
   }
 }
 
-export function markVisionUsed(): void {
-  tentativeVisionUsed = true;
-}
-
 export function hasTentativeActions(): boolean {
-  return tentativeActions.length > 0 && !tentativeVisionUsed;
+  return tentativeActions.length > 0;
 }
 
 export function commitRecordings(): number {
-  if (tentativeActions.length === 0 || tentativeVisionUsed) {
+  if (tentativeActions.length === 0) {
     tentativeActions = [];
     tentativeUrl = "";
     tentativeTask = "";
-    tentativeVisionUsed = false;
     return 0;
   }
 
@@ -156,7 +153,6 @@ export function commitRecordings(): number {
   tentativeActions = [];
   tentativeUrl = "";
   tentativeTask = "";
-  tentativeVisionUsed = false;
   return count;
 }
 
@@ -164,7 +160,6 @@ export function discardRecordings(): void {
   tentativeActions = [];
   tentativeUrl = "";
   tentativeTask = "";
-  tentativeVisionUsed = false;
 }
 
 // --- Cache Management ---

@@ -9,8 +9,8 @@ import { executeDomActions, formatResults, executeResolvedActions } from "./dom-
 import {
   findRecording,
   startRecordingSession,
+  seedTentativeActions,
   addTentativeAction,
-  markVisionUsed,
   hasTentativeActions,
   commitRecordings,
   discardRecordings,
@@ -426,7 +426,10 @@ async function runHybridMode(
   precision: Precision,
   logs: string[]
 ): Promise<void> {
-  // Check recording cache before starting AI planning
+  // Start tentative recording session for this task
+  startRecordingSession(url, task);
+
+  // Check recording cache — replay cached steps, then continue for remaining
   const urlPattern = getUrlPattern(url);
   const cached = findRecording(urlPattern, task);
   if (cached) {
@@ -435,15 +438,16 @@ async function runHybridMode(
     const allSuccess = results.every(r => r.success);
     if (allSuccess) {
       updateRecordingUsage(cached.id);
-      logs.push(`[cached] All ${cached.actions.length} steps replayed successfully`);
-      return;
+      // Seed tentative actions with cached ones so they're preserved in new recording
+      seedTentativeActions(cached.actions);
+      logs.push(`[cached] ${cached.actions.length} cached steps replayed`);
+      // Don't return — fall through to hybrid loop for remaining steps
+      await new Promise((r) => setTimeout(r, 1000));
+    } else {
+      logs.push(`[cached] Replay failed, falling back to AI mode`);
+      deleteRecording(cached.id);
     }
-    logs.push(`[cached] Replay failed, falling back to AI mode`);
-    deleteRecording(cached.id);
   }
-
-  // Start tentative recording session for this task
-  startRecordingSession(url, task);
 
   let turns = 0;
   let previousActionLog: string[] = [];
@@ -511,7 +515,6 @@ async function runHybridMode(
         await new Promise((resolve) => setTimeout(resolve, 500));
       } else {
         // DOM failed — try this specific action via vision
-        markVisionUsed();
         const actionDesc = describeActionForVision(action, snapshot.elements);
         logs.push(`[hybrid] DOM failed for "${actionDesc}", trying vision...`);
         const visionOk = await runSingleVisionStep(page, apiConfig, actionDesc, precision, logs);
